@@ -2,10 +2,17 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
+  "env": {
+    "NEXT_PUBLIC_API_URL": ""
+  },
   "rewrites": [
     {
       "source": "/api/:path*",
       "destination": "https://nexusai-api.railway.app/api/:path*"
+    },
+    {
+      "source": "/webhooks/:path*",
+      "destination": "https://nexusai-api.railway.app/webhooks/:path*"
     }
   ],
   "headers": [
@@ -14,7 +21,8 @@
       "headers": [
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-XSS-Protection", "value": "1; mode=block" }
       ]
     }
   ]
