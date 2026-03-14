@@ -29,7 +29,7 @@ unstructured==0.14.6
 crawl4ai>=0.3.0
 youtube-transcript-api==0.6.2
 beautifulsoup4==4.12.3
-httpx==0.27.0
+httpx>=0.27.2
 
 # Auth & Security
 python-jose[cryptography]==3.3.0
