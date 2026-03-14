@@ -11,7 +11,8 @@ from loguru import logger
 
 from app.core.config import settings
 
-client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+def _get_client() -> anthropic.AsyncAnthropic:
+    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 ESCALATION_EMOTIONS = {"angry", "frustrated", "outraged"}
 
@@ -52,7 +53,7 @@ Guidelines:
 - neutral: factual, no strong emotion
 - should_escalate: true only if angry with intensity > 0.7 OR contains threats/legal language"""
 
-        response = await client.messages.create(
+        response = await _get_client().messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=100,
             messages=[{"role": "user", "content": prompt}],

@@ -19,7 +19,8 @@ from app.services.knowledge import search_knowledge
 from app.services.language import detect_language
 from app.services.sentiment import analyze_sentiment, sentiment_to_tone_instruction
 
-client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+def _get_client() -> anthropic.AsyncAnthropic:
+    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 # ─── TOOLS the agent can use ───────────────────────────────────
 AGENT_TOOLS = [
@@ -184,7 +185,7 @@ async def run_agent(
         messages = history + [{"role": "user", "content": user_content}]
 
         # 6. Call Claude with tools
-        response = await client.messages.create(
+        response = await _get_client().messages.create(
             model=settings.ANTHROPIC_MODEL,
             max_tokens=1000,
             system=system_prompt,
@@ -227,7 +228,7 @@ async def run_agent(
                 for i, r in enumerate(tool_results)
             ]
 
-            follow_up = await client.messages.create(
+            follow_up = await _get_client().messages.create(
                 model=settings.ANTHROPIC_MODEL,
                 max_tokens=800,
                 system=system_prompt,
