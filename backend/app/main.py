@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 import os
+from sqlalchemy import text
 
 from app.api import auth, tenants, chat, knowledge, channels, leads, broadcasts, webhooks, analytics, reseller, templates, csat, cart_recovery, integrations
 from app.core.database import engine, Base
@@ -26,13 +28,15 @@ app = FastAPI(
 )
 
 # ─── CORS ──────────────────────────────────────────────────────
+_cors_origins = [
+    os.getenv("FRONTEND_URL", "http://localhost:3000"),
+    "http://localhost:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.getenv("FRONTEND_URL", "http://localhost:3000"),
-        "http://localhost:3000",
-        "*",  # Remove in production, use specific origins
-    ],
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"https://.*\.railway\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,6 +68,12 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    from app.core.database import engine
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return {"status": "healthy", "db": "ok"}
+    except Exception as e:
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "db": str(e)})
 
 logger.info("NexusAI API started")

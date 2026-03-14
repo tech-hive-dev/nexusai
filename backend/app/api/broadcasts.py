@@ -153,7 +153,11 @@ async def update_broadcast(
     if row[0] in ("sending", "sent"):
         raise HTTPException(status_code=400, detail="Cannot edit a broadcast that is sending or already sent")
 
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    _ALLOWED_UPDATE_COLS = {"name", "content", "subject", "target_filter", "scheduled_at"}
+    updates = {
+        k: v for k, v in body.model_dump().items()
+        if v is not None and k in _ALLOWED_UPDATE_COLS
+    }
     if not updates:
         return {"success": True}
 
@@ -219,8 +223,8 @@ async def _count_recipients(tenant_id: str, target_filter: dict, db: AsyncSessio
         params["channel"] = target_filter["channel"]
 
     if target_filter.get("last_seen_days"):
-        where.append("last_seen_at >= NOW() - INTERVAL ':days days'")
-        params["days"] = target_filter["last_seen_days"]
+        where.append("last_seen_at >= NOW() - make_interval(days => :days)")
+        params["days"] = int(target_filter["last_seen_days"])
 
     if target_filter.get("tags"):
         where.append("tags && :tags")

@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
-import os, aiofiles
+import os, re, aiofiles
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_tenant
@@ -94,9 +94,16 @@ async def upload_file_source(
     # 1. Save file locally (always, for backup or immediate ingestion)
     upload_dir = f"uploads/{tenant.id}"
     os.makedirs(upload_dir, exist_ok=True)
-    file_path = f"{upload_dir}/{file.filename}"
-    
+
+    # Sanitize filename to prevent path traversal attacks
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", os.path.basename(file.filename or "upload"))
+    file_path = os.path.join(upload_dir, safe_name)
+
+    MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
     content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 20 MB.")
+
     async with aiofiles.open(file_path, "wb") as f:
         await f.write(content)
 

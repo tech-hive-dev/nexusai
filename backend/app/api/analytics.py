@@ -53,6 +53,7 @@ async def get_trend(
     db: AsyncSession = Depends(get_db),
 ):
     """Daily conversation counts for the last N days."""
+    days = max(1, min(days, 365))
     result = await db.execute(
         text("""
             SELECT DATE(created_at) AS day, COUNT(*) AS count

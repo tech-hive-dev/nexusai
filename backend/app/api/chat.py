@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 import json
 from loguru import logger
@@ -26,14 +26,14 @@ active_connections: dict[str, list[WebSocket]] = {}
 
 
 class ChatRequest(BaseModel):
-    message: str
-    conversation_id: Optional[str] = None
-    tenant_slug: str
-    channel: str = "website"
-    customer_external_id: Optional[str] = None
-    customer_name: Optional[str] = None
-    customer_email: Optional[str] = None
-    media_url: Optional[str] = None
+    message: str = Field(..., min_length=1, max_length=4000)
+    conversation_id: Optional[str] = Field(None, max_length=36)
+    tenant_slug: str = Field(..., max_length=100)
+    channel: str = Field("website", max_length=50)
+    customer_external_id: Optional[str] = Field(None, max_length=255)
+    customer_name: Optional[str] = Field(None, max_length=255)
+    customer_email: Optional[str] = Field(None, max_length=255)
+    media_url: Optional[str] = Field(None, max_length=2048)
 
 
 class ChatResponse(BaseModel):
@@ -366,8 +366,31 @@ async def export_conversation_pdf(
 
 # ─── WEBSOCKET ───────────────────────────────────────────────
 @router.websocket("/ws/{tenant_slug}")
-async def websocket_endpoint(websocket: WebSocket, tenant_slug: str):
+async def websocket_endpoint(websocket: WebSocket, tenant_slug: str, token: Optional[str] = None):
     """Real-time dashboard connection for live conversation monitoring"""
+    # Validate JWT before accepting the connection
+    if not token:
+        await websocket.close(code=4001)
+        return
+    try:
+        from app.core.auth import decode_token
+        from app.core.database import AsyncSessionLocal
+        payload = decode_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            await websocket.close(code=4001)
+            return
+        async with AsyncSessionLocal() as _db:
+            from app.models.user import User
+            _result = await _db.execute(select(User).where(User.id == user_id))
+            _user = _result.scalar_one_or_none()
+            if not _user or not _user.is_active:
+                await websocket.close(code=4001)
+                return
+    except Exception:
+        await websocket.close(code=4001)
+        return
+
     await websocket.accept()
     if tenant_slug not in active_connections:
         active_connections[tenant_slug] = []
@@ -494,7 +517,10 @@ async def _get_or_create_conversation(
 ) -> Conversation:
     if conversation_id:
         result = await db.execute(
-            select(Conversation).where(Conversation.id == conversation_id)
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.tenant_id == tenant_id,
+            )
         )
         conv = result.scalar_one_or_none()
         if conv:
