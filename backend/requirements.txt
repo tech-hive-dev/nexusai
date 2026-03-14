@@ -19,7 +19,7 @@ anthropic==0.28.0
 langchain==0.2.5
 langchain-anthropic==0.1.15
 langchain-community==0.2.5
-openai==1.30.1          # for Whisper
+openai>=1.45.0          # for Whisper
 
 # Document parsing
 pypdf2==3.0.1
@@ -43,10 +43,10 @@ sendgrid==6.11.0
 stripe==9.12.0
 
 # Utils
-pydantic==2.7.1
+pydantic>=2.10.0
 pydantic-settings==2.3.1
 python-dotenv==1.0.1
-aiofiles==23.2.1
-pillow==10.3.0
+aiofiles>=24.1.0
+pillow>=10.4.0
 tenacity==8.3.0
 loguru==0.7.2
