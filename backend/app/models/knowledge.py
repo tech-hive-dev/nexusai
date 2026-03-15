@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Text, ForeignKey, DateTime, Integer, func
+from sqlalchemy import String, Text, ForeignKey, DateTime, JSON, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -28,6 +28,6 @@ class KnowledgeChunk(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"))
     source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("knowledge_sources.id", ondelete="CASCADE"))
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[Optional[str]] = mapped_column(Text)  # stored as JSON string
-    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", __import__("sqlalchemy").JSON, default=dict)
+    embedding: Mapped[Optional[str]] = mapped_column(Text)
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
