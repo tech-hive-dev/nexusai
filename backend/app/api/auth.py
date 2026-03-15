@@ -16,7 +16,7 @@ router = APIRouter()
 class RegisterRequest(BaseModel):
     business_name: str
     email: EmailStr
-    password: str = Field(..., min_length=8, pattern=r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&.])[A-Za-z\d@$!%*#?&.]{8,}$")
+    password: str = Field(..., min_length=8, pattern=r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$")
     full_name: Optional[str] = None
     industry: Optional[str] = None
 
