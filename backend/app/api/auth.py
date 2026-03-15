@@ -30,7 +30,6 @@ class RegisterRequest(BaseModel):
         if not any(not char.isalnum() for char in v):
             raise ValueError("Password must contain at least one special character")
         return v
-    industry: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
