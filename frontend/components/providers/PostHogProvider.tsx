@@ -11,7 +11,7 @@ if (typeof window !== 'undefined') {
         posthog.init(posthogKey, {
             api_host: posthogHost,
             capture_pageview: false, // Handled manually below for App Router
-            capture_page_leave: true,
+            capture_pageleave: true,
         });
     }
 }

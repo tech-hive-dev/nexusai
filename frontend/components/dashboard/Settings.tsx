@@ -16,7 +16,7 @@ function Field({ label, value, onChange, type = "text", placeholder = "", rows =
     width: "100%", background: "rgba(255,255,255,0.05)",
     border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
     padding: "9px 12px", color: "#e8eaf0", fontSize: 13, outline: "none",
-    resize: rows ? "vertical" : "none", fontFamily: "inherit",
+    resize: (rows ? "vertical" : "none") as "vertical" | "none", fontFamily: "inherit",
     boxSizing: "border-box" as const,
   };
   return (
@@ -77,7 +77,7 @@ export default function Settings() {
         vocabulary_overrides: d.vocabulary_overrides || {},
         competitor_playbook: d.competitor_playbook || [],
       }))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const set = (field: string, value: any) => setForm((f: any) => ({ ...f, [field]: value }));

@@ -70,9 +70,9 @@ export default function Conversations() {
           ];
         });
       } else if (lastEvent.type === "takeover") {
-        setSelected(prev => ({ ...prev, status: "human", is_human_takeover: true }));
+        setSelected((prev: any) => ({ ...prev, status: "human", is_human_takeover: true }));
       } else if (lastEvent.type === "release") {
-        setSelected(prev => ({ ...prev, status: "open", is_human_takeover: false }));
+        setSelected((prev: any) => ({ ...prev, status: "open", is_human_takeover: false }));
       }
     }
   }, [lastEvent]);
