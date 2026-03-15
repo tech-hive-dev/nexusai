@@ -9,11 +9,10 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import get_db
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__truncate_error=False)
 security = HTTPBearer()
 
 def hash_password(password: str) -> str:
-    # bcrypt has a 72-byte limit; pre-truncate to avoid ValueError on long passwords
     return pwd_context.hash(password[:72])
 
 def verify_password(plain: str, hashed: str) -> bool:
