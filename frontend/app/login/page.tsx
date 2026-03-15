@@ -24,7 +24,14 @@ export default function LoginPage() {
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Something went wrong");
+      if (!res.ok) {
+        if (Array.isArray(data.detail)) {
+          const err = data.detail[0];
+          const field = err.loc && err.loc.length > 0 ? err.loc[err.loc.length - 1] : "";
+          throw new Error(field ? `${field}: ${err.msg}` : err.msg);
+        }
+        throw new Error(data.detail || "Something went wrong");
+      }
 
       localStorage.setItem("nexusai_token", data.access_token);
       if (mode === "register" || !data.tenant?.onboarding_completed) {
@@ -39,13 +46,14 @@ export default function LoginPage() {
     }
   };
 
-  const inp = (field: string, label: string, type = "text") => (
+  const inp = (field: string, label: string, type = "text", hint?: string) => (
     <div style={{ marginBottom: 16 }}>
       <label style={{ color: "rgba(255,255,255,0.5)", fontSize: 12, display: "block", marginBottom: 6, fontFamily: "monospace", letterSpacing: 0.5 }}>{label.toUpperCase()}</label>
       <input type={type} value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.target.value })}
         onKeyDown={e => e.key === "Enter" && submit()}
         style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "11px 14px", color: "#e8eaf0", fontSize: 14, outline: "none" }}
       />
+      {hint && <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{hint}</div>}
     </div>
   );
 
@@ -64,7 +72,7 @@ export default function LoginPage() {
           {mode === "register" && inp("business_name", "Business Name")}
           {mode === "register" && inp("full_name", "Your Name")}
           {inp("email", "Email", "email")}
-          {inp("password", "Password", "password")}
+          {inp("password", "Password", "password", mode === "register" ? "At least 8 chars, 1 number, 1 special character" : undefined)}
 
           {error && <div style={{ background: "rgba(255,94,94,0.1)", border: "1px solid rgba(255,94,94,0.3)", color: "#FF5E5E", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>{error}</div>}
 

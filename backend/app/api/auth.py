@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 import re
 
@@ -16,7 +16,7 @@ router = APIRouter()
 class RegisterRequest(BaseModel):
     business_name: str
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, pattern=r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&.])[A-Za-z\d@$!%*#?&.]{8,}$")
     full_name: Optional[str] = None
     industry: Optional[str] = None
 
