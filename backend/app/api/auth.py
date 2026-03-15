@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 import re
 
@@ -16,8 +16,20 @@ router = APIRouter()
 class RegisterRequest(BaseModel):
     business_name: str
     email: EmailStr
-    password: str = Field(..., min_length=8, pattern=r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$")
+    password: str = Field(..., min_length=8)
     full_name: Optional[str] = None
+    industry: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not any(char.isdigit() for char in v):
+            raise ValueError("Password must contain at least one number")
+        if not any(char.isalpha() for char in v):
+            raise ValueError("Password must contain at least one letter")
+        if not any(not char.isalnum() for char in v):
+            raise ValueError("Password must contain at least one special character")
+        return v
     industry: Optional[str] = None
 
 
