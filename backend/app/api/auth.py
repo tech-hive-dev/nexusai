@@ -44,51 +44,56 @@ def slugify(name: str) -> str:
 
 @router.post("/register")
 async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    # Check if email exists
-    result = await db.execute(select(User).where(User.email == request.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email already registered")
+    try:
+        # Check if email exists
+        result = await db.execute(select(User).where(User.email == request.email))
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Create tenant
-    base_slug = slugify(request.business_name)
-    slug = base_slug
-    counter = 1
-    while True:
-        result = await db.execute(select(Tenant).where(Tenant.slug == slug))
-        if not result.scalar_one_or_none():
-            break
-        slug = f"{base_slug}-{counter}"
-        counter += 1
+        # Create tenant
+        base_slug = slugify(request.business_name)
+        slug = base_slug
+        counter = 1
+        while True:
+            result = await db.execute(select(Tenant).where(Tenant.slug == slug))
+            if not result.scalar_one_or_none():
+                break
+            slug = f"{base_slug}-{counter}"
+            counter += 1
 
-    tenant = Tenant(
-        name=request.business_name,
-        slug=slug,
-        industry=request.industry,
-        plan="starter",
-        plan_status="trial",
-    )
-    db.add(tenant)
-    await db.flush()
+        tenant = Tenant(
+            name=request.business_name,
+            slug=slug,
+            industry=request.industry,
+            plan="starter",
+            plan_status="trial",
+        )
+        db.add(tenant)
+        await db.flush()
 
-    # Create user
-    user = User(
-        tenant_id=tenant.id,
-        email=request.email,
-        hashed_password=hash_password(request.password),
-        full_name=request.full_name or request.business_name,
-        role="owner",
-    )
-    db.add(user)
-    await db.commit()
+        # Create user
+        user = User(
+            tenant_id=tenant.id,
+            email=request.email,
+            hashed_password=hash_password(request.password),
+            full_name=request.full_name or request.business_name,
+            role="owner",
+        )
+        db.add(user)
+        await db.commit()
 
-    token = create_token({"sub": str(user.id), "tenant_id": str(tenant.id)})
+        token = create_token({"sub": str(user.id), "tenant_id": str(tenant.id)})
 
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "tenant": {"id": str(tenant.id), "name": tenant.name, "slug": tenant.slug},
-        "user": {"id": str(user.id), "email": user.email, "name": user.full_name},
-    }
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "tenant": {"id": str(tenant.id), "name": tenant.name, "slug": tenant.slug},
+            "user": {"id": str(user.id), "email": user.email, "name": user.full_name},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Registration failed: {type(e).__name__}: {str(e)}")
 
 
 @router.post("/login")
