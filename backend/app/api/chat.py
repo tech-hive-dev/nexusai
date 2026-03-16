@@ -46,7 +46,16 @@ class ChatResponse(BaseModel):
 @router.post("/message", response_model=ChatResponse)
 async def send_message(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     """Main chat endpoint - called by website widget and channel integrations"""
+    try:
+        return await _send_message_inner(request, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chat endpoint unhandled error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {str(e)}")
 
+
+async def _send_message_inner(request: ChatRequest, db: AsyncSession):
     # 1. Find tenant by slug
     result = await db.execute(
         select(Tenant).where(Tenant.slug == request.tenant_slug, Tenant.is_active == True)
