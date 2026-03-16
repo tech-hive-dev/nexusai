@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Simplified dependencies
+# System dependencies needed by our packages
 RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     curl \
+    gcc \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt .
