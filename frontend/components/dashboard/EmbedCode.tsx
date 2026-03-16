@@ -1,7 +1,7 @@
 // EmbedCode.tsx
 "use client";
 import { useEffect, useState } from "react";
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => localStorage.getItem("nexusai_token");
 
 export default function EmbedCode() {
@@ -9,7 +9,7 @@ export default function EmbedCode() {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     fetch(`${API}/api/tenants/embed-code`, { headers: { Authorization: `Bearer ${token()}` } })
-      .then(r => r.json()).then(d => setCode(d.code)).catch(() => {});
+      .then(r => r.json()).then(d => setCode(d.code)).catch(() => { });
   }, []);
   const copy = () => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   return (

@@ -1,7 +1,7 @@
 // KnowledgeBase.tsx
 "use client";
 import { useEffect, useState, useRef } from "react";
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => localStorage.getItem("nexusai_token");
 
 export default function KnowledgeBase() {

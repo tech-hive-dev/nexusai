@@ -1,7 +1,7 @@
 // Leads.tsx
 "use client";
 import { useEffect, useState } from "react";
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => localStorage.getItem("nexusai_token");
 
 export default function Leads() {
@@ -9,7 +9,7 @@ export default function Leads() {
   const [search, setSearch] = useState("");
   useEffect(() => {
     fetch(`${API}/api/leads/`, { headers: { Authorization: `Bearer ${token()}` } })
-      .then(r => r.json()).then(setLeads).catch(() => {});
+      .then(r => r.json()).then(setLeads).catch(() => { });
   }, []);
   const filtered = leads.filter(l =>
     !search || [l.name, l.email, l.phone].some(v => v?.toLowerCase().includes(search.toLowerCase()))

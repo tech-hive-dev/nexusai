@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => typeof window !== "undefined" ? localStorage.getItem("nexusai_token") : "";
 
 function UsageBar({ label, used, limit, color }: any) {

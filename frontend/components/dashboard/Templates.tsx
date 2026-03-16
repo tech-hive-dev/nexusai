@@ -9,7 +9,7 @@ interface Template {
 }
 interface CustomForm { name: string; industry: string; description: string; icon: string; }
 
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => (typeof window !== "undefined" ? localStorage.getItem("nexusai_token") : "");
 
 const INDUSTRY_COLORS: Record<string, string> = {

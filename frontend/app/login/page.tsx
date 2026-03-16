@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 
 type Mode = "login" | "register" | "forgot";
 
@@ -53,7 +53,12 @@ export default function LoginPage() {
         router.push("/dashboard");
       }
     } catch (e: any) {
-      setError(e.message);
+      console.error("Fetch error:", e);
+      // Improve visibility of connectivity issues
+      const msg = e.message === "Failed to fetch"
+        ? `Connectivity Error: Could not reach the backend API at ${API}. Please check your connection or environment vars.`
+        : e.message;
+      setError(msg);
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { API_URL as api } from "@/utils/api";
 
 interface Broadcast {
   id: string;
@@ -15,11 +16,11 @@ interface Broadcast {
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, { bg: string; color: string }> = {
-    draft:     { bg: "rgba(100,116,139,0.15)", color: "#64748B" },
-    scheduled: { bg: "rgba(245,158,11,0.15)",  color: "#F59E0B" },
-    sending:   { bg: "rgba(99,102,241,0.15)",  color: "#818CF8" },
-    sent:      { bg: "rgba(16,185,129,0.15)",  color: "#10B981" },
-    failed:    { bg: "rgba(239,68,68,0.15)",   color: "#EF4444" },
+    draft: { bg: "rgba(100,116,139,0.15)", color: "#64748B" },
+    scheduled: { bg: "rgba(245,158,11,0.15)", color: "#F59E0B" },
+    sending: { bg: "rgba(99,102,241,0.15)", color: "#818CF8" },
+    sent: { bg: "rgba(16,185,129,0.15)", color: "#10B981" },
+    failed: { bg: "rgba(239,68,68,0.15)", color: "#EF4444" },
   };
   const c = colors[status] || colors.draft;
   return (
@@ -37,7 +38,6 @@ export default function Broadcasts() {
   const [creating, setCreating] = useState(false);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("nexusai_token") : "";
-  const api = process.env.NEXT_PUBLIC_API_URL;
 
   async function fetchBroadcasts() {
     setLoading(true);

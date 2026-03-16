@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => (typeof window !== "undefined" ? localStorage.getItem("nexusai_token") : "");
 
 interface Integration {
@@ -35,7 +35,7 @@ export default function Integrations() {
     fetch(`${API}/api/integrations/`, { headers: { Authorization: `Bearer ${token()}` } })
       .then((r) => r.json())
       .then((d) => setIntegrations(d.integrations || []))
-      .catch(() => {});
+      .catch(() => { });
   };
   useEffect(load, []);
 

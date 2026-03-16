@@ -15,6 +15,7 @@ import Billing from "@/components/dashboard/Billing";
 import CartRecovery from "@/components/dashboard/CartRecovery";
 import Integrations from "@/components/dashboard/Integrations";
 import Playground from "@/components/dashboard/Playground";
+import { API_URL as API } from "@/utils/api";
 
 const VIEWS: Record<string, React.ComponentType> = {
   overview: Overview,
@@ -41,7 +42,7 @@ export default function Dashboard() {
     const token = localStorage.getItem("nexusai_token");
     if (!token) { router.push("/login"); return; }
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/me`, {
+    fetch(`${API}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => r.json())

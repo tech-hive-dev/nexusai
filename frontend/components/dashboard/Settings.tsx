@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => localStorage.getItem("nexusai_token");
 
 function SectionLabel({ children }: { children: string }) {

@@ -1,7 +1,7 @@
 // Playground.tsx — in-dashboard AI chatbot tester
 "use client";
 import { useState, useRef, useEffect } from "react";
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => localStorage.getItem("nexusai_token");
 
 interface Msg { role: "user" | "ai"; text: string; ts: string; }

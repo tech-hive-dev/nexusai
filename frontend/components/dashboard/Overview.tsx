@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => typeof window !== "undefined" ? localStorage.getItem("nexusai_token") : "";
 
 function StatCard({ label, value, color, sub }: any) {

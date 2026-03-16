@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useConversationSocket } from "@/app/hooks/useConversationSocket";
 
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { API_URL as API } from "@/utils/api";
 const token = () => (typeof window !== "undefined" ? localStorage.getItem("nexusai_token") : "");
 
 export default function Conversations() {

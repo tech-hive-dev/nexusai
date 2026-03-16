@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { API_URL as api } from "@/utils/api";
 
 interface Recovery {
   id: string;
@@ -16,9 +17,9 @@ interface Recovery {
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, { bg: string; color: string }> = {
     in_progress: { bg: "rgba(99,102,241,0.15)", color: "#818CF8" },
-    recovered:   { bg: "rgba(16,185,129,0.15)",  color: "#10B981" },
-    abandoned:   { bg: "rgba(100,116,139,0.15)", color: "#64748B" },
-    failed:      { bg: "rgba(239,68,68,0.15)",   color: "#EF4444" },
+    recovered: { bg: "rgba(16,185,129,0.15)", color: "#10B981" },
+    abandoned: { bg: "rgba(100,116,139,0.15)", color: "#64748B" },
+    failed: { bg: "rgba(239,68,68,0.15)", color: "#EF4444" },
   };
   const c = colors[status] || colors.in_progress;
   return (
@@ -34,7 +35,6 @@ export default function CartRecovery() {
   const [stats, setStats] = useState({ total: 0, recovered: 0, revenue: 0, rate: 0 });
 
   const token = typeof window !== "undefined" ? localStorage.getItem("nexusai_token") : "";
-  const api = process.env.NEXT_PUBLIC_API_URL;
 
   useEffect(() => {
     fetch(`${api}/api/cart-recovery/`, { headers: { Authorization: `Bearer ${token}` } })
@@ -52,7 +52,7 @@ export default function CartRecovery() {
           rate: list.length ? Math.round((recovered.length / list.length) * 100) : 0,
         });
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, []);
 
