@@ -8,21 +8,33 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://nexusai-api.railway.app/api/:path*"
+      "destination": "https://wonderful-strength-production-a598.up.railway.app/api/:path*"
     },
     {
       "source": "/webhooks/:path*",
-      "destination": "https://nexusai-api.railway.app/webhooks/:path*"
+      "destination": "https://wonderful-strength-production-a598.up.railway.app/webhooks/:path*"
     }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "X-XSS-Protection", "value": "1; mode=block" }
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
       ]
     }
   ]
