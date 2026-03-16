@@ -47,7 +47,7 @@ export default function LoginPage() {
       }
 
       localStorage.setItem("nexusai_token", data.access_token);
-      if (mode === "register" || !data.tenant?.onboarding_completed) {
+      if (mode === "register") {
         router.push("/onboarding");
       } else {
         router.push("/dashboard");
