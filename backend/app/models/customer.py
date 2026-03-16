@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Text, ForeignKey, DateTime, JSON, Integer, func
+from sqlalchemy import String, Text, ForeignKey, DateTime, JSON, Integer, func, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -18,7 +18,7 @@ class Customer(Base):
     phone: Mapped[Optional[str]] = mapped_column(String(50))
     language: Mapped[Optional[str]] = mapped_column(String(10), default="en")
     preferences: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
-    tags: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(String), default=list)
     notes: Mapped[Optional[str]] = mapped_column(Text)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     total_conversations: Mapped[Optional[int]] = mapped_column(Integer, default=0)
