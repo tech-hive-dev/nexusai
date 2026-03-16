@@ -54,7 +54,7 @@ Guidelines:
 - should_escalate: true only if angry with intensity > 0.7 OR contains threats/legal language"""
 
         response = await _get_client().messages.create(
-            model="claude-3-5-haiku-latest",
+            model="claude-haiku-4-5-20251001",
             max_tokens=100,
             messages=[{"role": "user", "content": prompt}],
         )
