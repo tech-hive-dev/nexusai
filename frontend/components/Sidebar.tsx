@@ -7,6 +7,7 @@ const NAV_GROUPS = [
     items: [
       { id: "overview", icon: "◈", label: "Overview" },
       { id: "conversations", icon: "◉", label: "Conversations" },
+      { id: "playground", icon: "🧪", label: "AI Playground" },
       { id: "leads", icon: "◆", label: "Leads & CRM" },
     ],
   },

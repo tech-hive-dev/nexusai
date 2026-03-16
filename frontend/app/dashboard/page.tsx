@@ -14,6 +14,7 @@ import Templates from "@/components/dashboard/Templates";
 import Billing from "@/components/dashboard/Billing";
 import CartRecovery from "@/components/dashboard/CartRecovery";
 import Integrations from "@/components/dashboard/Integrations";
+import Playground from "@/components/dashboard/Playground";
 
 const VIEWS: Record<string, React.ComponentType> = {
   overview: Overview,
@@ -28,6 +29,7 @@ const VIEWS: Record<string, React.ComponentType> = {
   templates: Templates,
   billing: Billing,
   integrations: Integrations,
+  playground: Playground,
 };
 
 export default function Dashboard() {

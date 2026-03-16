@@ -85,9 +85,15 @@ async def upload_file_source(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "excel",
         "application/vnd.ms-excel": "excel",
         "text/csv": "excel",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "word",
+        "application/msword": "word",
     }
 
-    file_type = allowed_types.get(file.content_type)
+    # Also detect by file extension for browsers that send wrong MIME type
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    ext_map = {".pdf": "pdf", ".xlsx": "excel", ".xls": "excel", ".csv": "excel",
+               ".docx": "word", ".doc": "word"}
+    file_type = allowed_types.get(file.content_type) or ext_map.get(ext)
     if not file_type:
         raise HTTPException(status_code=400, detail=f"File type not supported: {file.content_type}")
 
@@ -122,7 +128,7 @@ async def upload_file_source(
         type=file_type,
         name=file.filename,
         file_path=file_path,
-        file_url=file_url,
+        url=file_url,   # url column stores the cloud URL if available
         status="pending",
     )
     db.add(source)

@@ -14,7 +14,7 @@ export default function KnowledgeBase() {
 
   const load = () =>
     fetch(`${API}/api/knowledge/sources`, { headers: { Authorization: `Bearer ${token()}` } })
-      .then((r) => r.json()).then(setSources).catch(() => {});
+      .then((r) => r.json()).then(setSources).catch(() => { });
 
   useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, []);
 
@@ -68,9 +68,9 @@ export default function KnowledgeBase() {
         />
         <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
           <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Or upload a file:</span>
-          <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv" style={{ display: "none" }} onChange={uploadFile} />
+          <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv,.doc,.docx" style={{ display: "none" }} onChange={uploadFile} />
           <button onClick={() => fileRef.current?.click()} style={{ ...btnStyle, background: "transparent", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.6)" }}>
-            📎 PDF / Excel / CSV
+            📎 PDF / Word / Excel / CSV
           </button>
         </div>
       </div>
