@@ -91,7 +91,17 @@ export default function LoginPage() {
           {mode === "login" && (
             <div style={{ textAlign: "right", marginTop: -8, marginBottom: 16 }}>
               <button onClick={() => { setMode("forgot"); setError(""); setSuccess(""); }}
-                style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 12 }}>
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#4FFFB0",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  opacity: 0.8,
+                  textDecoration: "underline",
+                  textUnderlineOffset: 3
+                }}>
                 Forgot password?
               </button>
             </div>

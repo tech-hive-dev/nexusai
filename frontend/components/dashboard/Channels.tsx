@@ -57,23 +57,32 @@ export default function Channels() {
   const [open, setOpen] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [error, setAppError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
-  const [setView, _] = useState<string>("");
 
   const save = async (ch: ChannelConfig) => {
     if (!ch.fields) return;
     setSaving(true);
+    setAppError(null);
     try {
-      // Save each field as a tenant setting key
       const updates: Record<string, string> = {};
       ch.fields.forEach(f => { if (fields[f.key]) updates[f.key.toLowerCase()] = fields[f.key]; });
-      await fetch(`${API}/api/tenants/settings`, {
+
+      const res = await fetch(`${API}/api/tenants/settings`, {
         method: "PATCH",
         headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
         body: JSON.stringify(updates),
       });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || "Failed to save configuration");
+      }
+
       setSaved(ch.name);
-      setTimeout(() => { setSaved(null); setOpen(null); }, 2500);
+      setTimeout(() => { setSaved(null); setOpen(null); }, 3000);
+    } catch (e: any) {
+      setAppError(e.message);
     } finally {
       setSaving(false);
     }
@@ -81,34 +90,56 @@ export default function Channels() {
 
   return (
     <div>
-      <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Channels</h2>
-      <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 14, marginBottom: 24 }}>
-        Connect your AI agent to messaging platforms.
-      </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Channels</h2>
+          <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 14 }}>
+            Connect your AI agent to messaging platforms.
+          </p>
+        </div>
+      </div>
 
       {saved && (
         <div style={{ background: "rgba(79,255,176,0.1)", border: "1px solid rgba(79,255,176,0.3)", borderRadius: 10, padding: "12px 16px", color: "#4FFFB0", fontSize: 13, marginBottom: 20 }}>
-          ✓ {saved} configured! Redeploy Railway for env vars to take effect.
+          ✓ {saved} configured successfully! Redeploy Railway for env vars to take effect if needed.
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+      {error && (
+        <div style={{ background: "rgba(255,94,94,0.1)", border: "1px solid rgba(255,94,94,0.3)", borderRadius: 10, padding: "12px 16px", color: "#FF5E5E", fontSize: 13, marginBottom: 20 }}>
+          ✕ Error: {error}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
         {CHANNELS.map(ch => (
-          <div key={ch.name} style={{ background: "rgba(255,255,255,0.03)", border: open === ch.name ? `1px solid ${ch.color}60` : "1px solid rgba(255,255,255,0.08)", borderTop: `3px solid ${ch.color}`, borderRadius: 12, padding: "18px 20px", transition: "border 0.15s" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 24 }}>{ch.icon}</span>
+          <div key={ch.name}
+            onClick={() => ch.fields && setOpen(open === ch.name ? null : ch.name)}
+            style={{
+              background: "rgba(255,255,255,0.03)",
+              border: open === ch.name ? `1px solid ${ch.color}60` : "1px solid rgba(255,255,255,0.08)",
+              borderTop: `3px solid ${ch.color}`,
+              borderRadius: 12,
+              padding: "20px",
+              transition: "all 0.2s ease",
+              cursor: ch.fields ? "pointer" : "default",
+              transform: open === ch.name ? "translateY(-2px)" : "none",
+              boxShadow: open === ch.name ? `0 10px 25px -5px ${ch.color}15` : "none"
+            }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <span style={{ fontSize: 28 }}>{ch.icon}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ color: "#e8eaf0", fontWeight: 700, fontSize: 14 }}>{ch.name}</div>
-                <span style={{ background: (statusColor[ch.status] || "#888") + "20", color: statusColor[ch.status] || "#888", padding: "1px 7px", borderRadius: 4, fontSize: 10, fontFamily: "monospace" }}>
+                <div style={{ color: "#e8eaf0", fontWeight: 700, fontSize: 15 }}>{ch.name}</div>
+                <span style={{ background: (statusColor[ch.status] || "#888") + "20", color: statusColor[ch.status] || "#888", padding: "2px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: "monospace" }}>
                   {ch.status.toUpperCase()}
                 </span>
               </div>
             </div>
-            <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 12, lineHeight: 1.5, marginBottom: 14 }}>{ch.desc}</div>
+            <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>{ch.desc}</div>
 
             {/* Action buttons */}
             {ch.status !== "coming" && (
-              <>
+              <div onClick={e => e.stopPropagation()}>
                 {ch.action === "embed" && (
                   <button
                     onClick={() => { const btn = document.querySelector('[data-view="embed"]') as HTMLElement; btn?.click(); }}
@@ -117,38 +148,51 @@ export default function Channels() {
                   </button>
                 )}
                 {ch.action === "api" && (
-                  <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "8px 12px", fontFamily: "monospace", fontSize: 11, color: "#C084FC" }}>
+                  <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8, padding: "10px 12px", fontFamily: "monospace", fontSize: 11, color: "#C084FC", wordBreak: "break-all" }}>
+                    <div style={{ opacity: 0.5, marginBottom: 4, fontSize: 9 }}>ENDPOINT</div>
                     POST {API}/api/chat/message
                   </div>
                 )}
                 {ch.fields && (
-                  <button onClick={() => setOpen(open === ch.name ? null : ch.name)} style={btnStyle(ch.color)}>
-                    {open === ch.name ? "Close ✕" : "⚙ Configure"}
+                  <button onClick={() => setOpen(open === ch.name ? null : ch.name)} style={{ ...btnStyle(ch.color), marginTop: 4 }}>
+                    {open === ch.name ? "Close Panel ✕" : "⚙ Configure Channel"}
                   </button>
                 )}
-              </>
+              </div>
             )}
             {ch.status === "coming" && (
-              <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 12, fontStyle: "italic" }}>Coming soon</div>
+              <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 12, fontStyle: "italic", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10 }}>Coming in future update</div>
             )}
 
             {/* Config panel */}
             {open === ch.name && ch.fields && (
-              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <div onClick={e => e.stopPropagation()} style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                 {ch.fields.map(f => (
-                  <div key={f.key} style={{ marginBottom: 12 }}>
-                    <label style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontFamily: "monospace", display: "block", marginBottom: 5 }}>{f.label.toUpperCase()}</label>
+                  <div key={f.key} style={{ marginBottom: 14 }}>
+                    <label style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700, fontFamily: "monospace", display: "block", marginBottom: 6 }}>{f.label.toUpperCase()}</label>
                     <input
                       type={f.type || "text"}
                       value={fields[f.key] || ""}
                       onChange={e => setFields(prev => ({ ...prev, [f.key]: e.target.value }))}
                       placeholder={f.placeholder}
-                      style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 10px", color: "#e8eaf0", fontSize: 12, outline: "none" }}
+                      style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "10px 12px", color: "#e8eaf0", fontSize: 13, outline: "none" }}
                     />
                   </div>
                 ))}
-                <button onClick={() => save(ch)} disabled={saving} style={{ ...btnStyle(ch.color), width: "100%", marginTop: 4 }}>
-                  {saving ? "Saving..." : "Save Configuration →"}
+                <button onClick={() => save(ch)} disabled={saving} style={{
+                  background: ch.color,
+                  color: "#000",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  cursor: saving ? "not-allowed" : "pointer",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  width: "100%",
+                  marginTop: 6,
+                  opacity: saving ? 0.7 : 1
+                }}>
+                  {saving ? "Deploying Configuration..." : "Save & Activate Channel →"}
                 </button>
               </div>
             )}

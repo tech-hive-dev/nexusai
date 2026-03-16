@@ -7,6 +7,8 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_tenant
 from app.models.tenant import Tenant
+from app.core.config import settings
+from loguru import logger
 
 router = APIRouter()
 
@@ -70,11 +72,17 @@ async def get_embed_code(
 ):
     """Get the embed snippet for website integration"""
     import os
-    backend_url = (
-        os.getenv("BACKEND_URL")
-        or (f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN')}" if os.getenv("RAILWAY_PUBLIC_DOMAIN") else None)
-        or "https://wonderful-strength-production-a598.up.railway.app"
-    )
+    backend_url = settings.BACKEND_URL
+    if not backend_url or "localhost" in backend_url:
+        # Fallback for Railway environment if BACKEND_URL is not set or still localhost
+        public_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        if public_domain:
+            backend_url = f"https://{public_domain}"
+        else:
+            # Absolute fallback to current active host
+            backend_url = "https://wonderful-strength-production-a598.up.railway.app"
+    
+    logger.info(f"Serving embed code with backend_url: {backend_url}")
     code = f"""<!-- NexusAI Chat Widget -->
 <script>
   window.NexusAIConfig = {{

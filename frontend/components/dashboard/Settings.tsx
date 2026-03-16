@@ -256,6 +256,12 @@ export default function Settings() {
       <div style={card}>
         <SectionLabel>PRIVACY & COMPLIANCE</SectionLabel>
         <Toggle
+          label="Internal Mode"
+          description="Agent will prioritize internal knowledge and skip public-facing niceties"
+          checked={!!form.is_internal_mode}
+          onChange={(v: boolean) => set("is_internal_mode", v)}
+        />
+        <Toggle
           label="PII Detection"
           description="Automatically detect and redact credit cards, SSNs, and passwords in messages"
           checked={!!form.pii_detection_enabled}

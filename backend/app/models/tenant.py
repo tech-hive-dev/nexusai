@@ -53,3 +53,4 @@ class Tenant(Base):
     woocommerce_url: Mapped[Optional[str]] = mapped_column(Text)
     woocommerce_key: Mapped[Optional[str]] = mapped_column(Text)
     woocommerce_secret: Mapped[Optional[str]] = mapped_column(Text)
+    hidden_templates: Mapped[Optional[list]] = mapped_column(JSON, default=list)

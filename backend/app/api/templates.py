@@ -11,8 +11,9 @@ from sqlalchemy import text
 import uuid
 
 from app.core.database import get_db
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_current_tenant
 from app.models.user import User
+from app.models.tenant import Tenant
 
 router = APIRouter(prefix="/api/templates", tags=["Templates"])
 
@@ -141,13 +142,25 @@ BUILTIN_TEMPLATES = [
 
 
 @router.get("/")
-async def list_templates():
-    return {"templates": BUILTIN_TEMPLATES}
+async def list_templates(
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    hidden = tenant.hidden_templates or []
+    templates = [t for t in BUILTIN_TEMPLATES if t["id"] not in hidden]
+    
+    # Add custom templates
+    for tid, tmpl in _custom_templates.items():
+        if tid not in hidden:
+            templates.append(tmpl)
+            
+    return {"templates": templates}
 
 
 @router.get("/{template_id}")
 async def get_template(template_id: str):
     tmpl = next((t for t in BUILTIN_TEMPLATES if t["id"] == template_id), None)
+    if not tmpl:
+        tmpl = _custom_templates.get(template_id)
     if not tmpl:
         raise HTTPException(status_code=404, detail="Template not found")
     return tmpl
@@ -262,16 +275,23 @@ async def create_custom_template(
 @router.delete("/{template_id}")
 async def delete_template(
     template_id: str,
-    current_user: User = Depends(get_current_user),
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Delete a custom template (built-in templates cannot be fully deleted)."""
+    """Hide a built-in template or delete a custom one."""
     if template_id in _custom_templates:
         del _custom_templates[template_id]
-        return {"success": True, "message": "Template deleted"}
-    # For built-in templates, just return success (they reload from BUILTIN_TEMPLATES)
-    if any(t["id"] == template_id for t in BUILTIN_TEMPLATES):
-        return {"success": True, "message": "Built-in template hidden"}
-    raise HTTPException(status_code=404, detail="Template not found")
+        return {"success": True, "message": "Custom template deleted"}
+    
+    # Mark as hidden for this tenant
+    hidden = list(tenant.hidden_templates or [])
+    if template_id not in hidden:
+        hidden.append(template_id)
+        tenant.hidden_templates = hidden
+        await db.commit()
+        return {"success": True, "message": "Template hidden"}
+    
+    return {"success": True, "message": "Already hidden"}
 
 
 @router.get("/recommend")
