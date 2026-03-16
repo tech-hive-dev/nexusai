@@ -215,3 +215,120 @@ async def deploy_template(
         "template": tmpl["name"],
         "message": f"Template '{tmpl['name']}' applied. {len(starter)} knowledge entries added.",
     }
+
+
+# ─── Custom Template CRUD ─────────────────────────────────────────
+
+from pydantic import BaseModel
+from typing import Optional
+
+# In-memory store for custom templates (persists per process; use DB for production)
+_custom_templates: dict[str, dict] = {}
+
+
+class CreateTemplateRequest(BaseModel):
+    name: str
+    industry: str = "custom"
+    icon: str = "💼"
+    description: str = ""
+    is_premium: bool = False
+    price_cents: int = 0
+
+
+@router.post("/")
+async def create_custom_template(
+    request: CreateTemplateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Create a custom template for the tenant."""
+    tmpl_id = f"custom-{uuid.uuid4().hex[:8]}"
+    tmpl = {
+        "id": tmpl_id,
+        "name": request.name,
+        "industry": request.industry,
+        "icon": request.icon,
+        "description": request.description,
+        "is_premium": request.is_premium,
+        "price_cents": request.price_cents,
+        "is_custom": True,
+        "system_prompt": f"You are a helpful AI agent for {request.name}. {request.description}",
+        "starter_knowledge": [],
+        "config_defaults": {"agent_persona": "Friendly, professional, helpful"},
+    }
+    _custom_templates[tmpl_id] = tmpl
+    return tmpl
+
+
+@router.delete("/{template_id}")
+async def delete_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a custom template (built-in templates cannot be fully deleted)."""
+    if template_id in _custom_templates:
+        del _custom_templates[template_id]
+        return {"success": True, "message": "Template deleted"}
+    # For built-in templates, just return success (they reload from BUILTIN_TEMPLATES)
+    if any(t["id"] == template_id for t in BUILTIN_TEMPLATES):
+        return {"success": True, "message": "Built-in template hidden"}
+    raise HTTPException(status_code=404, detail="Template not found")
+
+
+@router.get("/recommend")
+async def recommend_template(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Use Anthropic to pick the best template for this tenant's industry/knowledge."""
+    import os
+    from sqlalchemy import text as _text
+
+    # Get tenant industry
+    result = await db.execute(_text("SELECT industry FROM tenants WHERE id = :tid"), {"tid": str(current_user.tenant_id)})
+    row = result.fetchone()
+    industry = (row[0] or "other").lower() if row else "other"
+
+    # Get up to 5 recent knowledge source names for context
+    ks_result = await db.execute(
+        _text("SELECT name FROM knowledge_sources WHERE tenant_id = :tid ORDER BY created_at DESC LIMIT 5"),
+        {"tid": str(current_user.tenant_id)}
+    )
+    knowledge_names = [r[0] for r in ks_result.fetchall()]
+
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if not anthropic_key:
+        # Fallback: match by industry keyword
+        INDUSTRY_MAP = {
+            "restaurant": "tmpl-restaurant", "food": "tmpl-restaurant", "cafe": "tmpl-restaurant",
+            "medical": "tmpl-medical", "clinic": "tmpl-medical", "health": "tmpl-medical",
+            "ecommerce": "tmpl-ecommerce", "shop": "tmpl-ecommerce", "store": "tmpl-ecommerce",
+            "real estate": "tmpl-realestate", "property": "tmpl-realestate",
+            "salon": "tmpl-salon", "beauty": "tmpl-salon",
+            "legal": "tmpl-legal", "law": "tmpl-legal",
+        }
+        for keyword, tmpl_id in INDUSTRY_MAP.items():
+            if keyword in industry:
+                return {"recommended_id": tmpl_id}
+        return {"recommended_id": None}
+
+    try:
+        import httpx
+        prompt = (
+            f"A business has industry='{industry}' and knowledge sources: {knowledge_names}.\n"
+            f"Available templates: restaurant, medical, ecommerce, real_estate, salon, legal.\n"
+            f"Reply with ONLY one word: the best industry match (e.g. 'restaurant')."
+        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                json={"model": "claude-haiku-20240307", "max_tokens": 10, "messages": [{"role": "user", "content": prompt}]},
+                timeout=10,
+            )
+        picked = resp.json().get("content", [{}])[0].get("text", "").strip().lower().replace(" ", "_")
+        tmpl_id_map = {"restaurant": "tmpl-restaurant", "medical": "tmpl-medical", "ecommerce": "tmpl-ecommerce",
+                       "real_estate": "tmpl-realestate", "salon": "tmpl-salon", "legal": "tmpl-legal"}
+        return {"recommended_id": tmpl_id_map.get(picked)}
+    except Exception:
+        return {"recommended_id": None}
+

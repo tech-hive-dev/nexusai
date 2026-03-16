@@ -153,3 +153,95 @@ async def get_me(current_user=Depends(get_current_user), db: AsyncSession = Depe
             "conversation_limit": tenant.conversation_limit,
         },
     }
+
+
+# ─── Password Reset ─────────────────────────────────────────────────────────
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one number")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("Password must contain at least one letter")
+        if not any(not c.isalnum() for c in v):
+            raise ValueError("Password must contain at least one special character")
+        return v
+
+
+@router.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Send password reset email. Always returns 200 to avoid email enumeration."""
+    import os
+    from app.core.auth import create_token
+
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Create a short-lived reset token (1 hour)
+        reset_token = create_token({"sub": str(user.id), "purpose": "password_reset"}, expires_hours=1)
+
+        frontend_url = os.getenv("FRONTEND_URL", "https://nexusai.vercel.app")
+        reset_link = f"{frontend_url}/reset-password?token={reset_token}"
+
+        sendgrid_key = os.getenv("SENDGRID_API_KEY")
+        if sendgrid_key:
+            try:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        "https://api.sendgrid.com/v3/mail/send",
+                        headers={"Authorization": f"Bearer {sendgrid_key}", "Content-Type": "application/json"},
+                        json={
+                            "from": {"email": os.getenv("FROM_EMAIL", "noreply@nexusai.app"), "name": "NexusAI"},
+                            "to": [{"email": user.email}],
+                            "subject": "Reset your NexusAI password",
+                            "content": [{"type": "text/html", "value": f"""
+                                <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:40px 20px">
+                                  <h2 style="color:#4FFFB0;font-size:22px">Reset Your Password</h2>
+                                  <p>Click the button below to reset your NexusAI password. This link expires in 1 hour.</p>
+                                  <a href="{reset_link}" style="display:inline-block;background:#4FFFB0;color:#000;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;margin:20px 0">
+                                    Reset Password →
+                                  </a>
+                                  <p style="color:#666;font-size:13px">If you didn't request this, you can ignore this email.</p>
+                                </div>
+                            """}],
+                        },
+                        timeout=10,
+                    )
+            except Exception:
+                pass  # Silently fail — don't expose errors
+        else:
+            from loguru import logger
+            logger.info(f"[DEV] Password reset link for {user.email}: {reset_link}")
+
+    return {"message": "If that email exists, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Validate reset token and set new password."""
+    from app.core.auth import decode_token, hash_password as _hash
+
+    payload = decode_token(request.token)
+    if payload.get("purpose") != "password_reset":
+        raise HTTPException(status_code=400, detail="Invalid reset token")
+
+    user_id = payload.get("sub")
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.hashed_password = _hash(request.new_password[:72])
+    await db.commit()
+    return {"message": "Password updated successfully"}
+

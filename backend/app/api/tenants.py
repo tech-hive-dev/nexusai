@@ -69,15 +69,20 @@ async def get_embed_code(
     db: AsyncSession = Depends(get_db),
 ):
     """Get the embed snippet for website integration"""
-    from app.core.config import settings
+    import os
+    backend_url = (
+        os.getenv("BACKEND_URL")
+        or (f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN')}" if os.getenv("RAILWAY_PUBLIC_DOMAIN") else None)
+        or "https://wonderful-strength-production-a598.up.railway.app"
+    )
     code = f"""<!-- NexusAI Chat Widget -->
 <script>
   window.NexusAIConfig = {{
     tenantSlug: "{tenant.slug}",
     agentName: "{tenant.agent_name}",
     brandColor: "{tenant.brand_color}",
-    apiUrl: "{settings.BACKEND_URL}"
+    apiUrl: "{backend_url}"
   }};
 </script>
-<script src="{settings.BACKEND_URL}/widget/nexusai.js" async></script>"""
+<script src="{backend_url}/widget/nexusai.js" async></script>"""
     return {"code": code, "tenant_slug": tenant.slug}

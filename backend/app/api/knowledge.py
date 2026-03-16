@@ -188,3 +188,144 @@ async def _run_ingestion(source_id: str):
     from app.core.database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
         await ingest_source(source_id, db)
+
+
+# ─── AI Auto-Discovery ────────────────────────────────────────────────────────
+
+class AutoDiscoverRequest(BaseModel):
+    url: str
+    business_name: Optional[str] = None
+
+
+class AutoDiscoverConfirmRequest(BaseModel):
+    url: str
+    business_name: Optional[str] = None
+    approved_items: list  # list of {title, content} dicts to save
+
+
+@router.post("/auto-discover")
+async def auto_discover(
+    request: AutoDiscoverRequest,
+    tenant=Depends(get_current_tenant),
+    current_user=Depends(get_current_user),
+):
+    """Use Anthropic to analyze a website and return structured business knowledge preview."""
+    import httpx, os
+
+    # Step 1: Fetch website HTML (best-effort)
+    website_text = ""
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+            resp = await client.get(request.url, headers={"User-Agent": "NexusAI/1.0 (business indexer)"})
+            # Strip HTML tags roughly
+            import re as _re
+            website_text = _re.sub(r'<[^>]+>', ' ', resp.text)
+            website_text = _re.sub(r'\s+', ' ', website_text)[:8000]  # limit context
+    except Exception as e:
+        website_text = f"Could not fetch website: {str(e)}"
+
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if not anthropic_key:
+        # Fallback: return minimal info from the URL
+        return {
+            "items": [
+                {"title": "Business Website", "content": f"Website: {request.url}\nBusiness: {request.business_name or 'Unknown'}"},
+                {"title": "About Us", "content": "Add your business description here."},
+                {"title": "Contact", "content": "Add your contact information here."},
+            ],
+            "ai_powered": False,
+        }
+
+    prompt = f"""You are analyzing a business website to build a knowledge base for an AI customer service agent.
+
+Business name: {request.business_name or "Unknown"}
+Website URL: {request.url}
+Website content (first 8000 chars):
+{website_text}
+
+Extract the following information as a JSON array of objects with "title" and "content" fields:
+1. Business description (what they do, their mission)
+2. Products/Services/Menu (list with prices if available)
+3. Opening hours / availability
+4. Contact information (phone, email, address)
+5. FAQs (common questions and answers)
+6. Policies (returns, cancellations, etc.) if present
+7. Team/About if present
+
+Only include items where you found real information. Skip items with no data.
+Return ONLY valid JSON array, no explanation. Example:
+[{{"title": "About", "content": "We are..."}}, {{"title": "Hours", "content": "Mon-Fri 9am-6pm"}}]"""
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                json={
+                    "model": "claude-haiku-20240307",
+                    "max_tokens": 2000,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=30,
+            )
+        text = resp.json().get("content", [{}])[0].get("text", "[]").strip()
+        import json as _json
+        # Extract JSON from the response
+        start = text.find("[")
+        end = text.rfind("]") + 1
+        items = _json.loads(text[start:end]) if start >= 0 else []
+        return {"items": items, "ai_powered": True}
+    except Exception as e:
+        return {
+            "items": [
+                {"title": "Business Website", "content": f"Website: {request.url}"},
+                {"title": "About", "content": f"{request.business_name or 'This business'} — add description here."},
+            ],
+            "ai_powered": False,
+            "error": str(e),
+        }
+
+
+@router.post("/auto-discover/confirm")
+async def auto_discover_confirm(
+    request: AutoDiscoverConfirmRequest,
+    background_tasks: BackgroundTasks,
+    tenant=Depends(get_current_tenant),
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save approved knowledge items from auto-discovery to the knowledge base."""
+    saved_ids = []
+
+    # First, add the website itself as a source
+    website_source = KnowledgeSource(
+        tenant_id=tenant.id,
+        type="website",
+        name=request.business_name or "Business Website",
+        url=request.url,
+        status="pending",
+    )
+    db.add(website_source)
+    await db.flush()
+    background_tasks.add_task(_run_ingestion, str(website_source.id))
+    saved_ids.append(str(website_source.id))
+
+    # Then save each approved item as a manual knowledge source
+    for item in request.approved_items:
+        title = item.get("title", "Info")
+        content = item.get("content", "")
+        if not content.strip():
+            continue
+        source = KnowledgeSource(
+            tenant_id=tenant.id,
+            type="manual",
+            name=title,
+            url=f"{title}: {content[:100]}",
+            status="indexed",  # manually typed = immediately available
+            chunk_count=1,
+        )
+        db.add(source)
+
+    await db.commit()
+    return {"success": True, "sources_created": len(saved_ids) + len(request.approved_items), "message": "Knowledge base populated!"}
+
