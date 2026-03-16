@@ -116,14 +116,19 @@ async def send_message(request: ChatRequest, db: AsyncSession = Depends(get_db))
         )
 
     # 7. Run AI agent
-    result_data = await run_agent(
-        message=request.message,
-        conversation_id=str(conversation.id),
-        tenant=tenant,
-        customer=customer,
-        db=db,
-        media_url=request.media_url,
-    )
+    try:
+        result_data = await run_agent(
+            message=request.message,
+            conversation_id=str(conversation.id),
+            tenant=tenant,
+            customer=customer,
+            db=db,
+            media_url=request.media_url,
+        )
+    except Exception as agent_err:
+        logger.error(f"Agent failed for tenant {tenant.slug}: {agent_err}")
+        await db.commit()  # save the user message at least
+        raise HTTPException(status_code=500, detail=f"Agent error: {str(agent_err)}")
 
     # 8. Save assistant response
     assistant_msg = Message(
