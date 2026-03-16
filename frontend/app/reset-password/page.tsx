@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-const API = process.env.NEXT_PUBLIC_API_URL;
+import { getApiUrl } from "@/utils/api";
+const API = getApiUrl();
 
 export default function ResetPasswordPage() {
     const [password, setPassword] = useState("");

@@ -28,6 +28,8 @@ logger.info("Routers imported successfully.")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("NexusAI API starting up...")
+    if settings.JWT_SECRET in ("change_this_secret", "supersecretjwtkey123", ""):
+        logger.warning("JWT_SECRET is set to a weak default value — change it before going to production!")
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
@@ -56,7 +58,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_origin_regex=r"https://(.*\.railway\.app|.*\.vercel\.app)",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

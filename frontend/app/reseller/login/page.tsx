@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getApiUrl } from "@/utils/api";
 
 export default function ResellerLogin() {
   const router = useRouter();
@@ -14,7 +15,7 @@ export default function ResellerLogin() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reseller/login`, {
+      const res = await fetch(`${getApiUrl()}/api/reseller/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),

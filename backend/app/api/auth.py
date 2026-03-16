@@ -111,7 +111,9 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     # Get tenant info
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
-    tenant = tenant_result.scalar_one()
+    tenant = tenant_result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=500, detail="Tenant not found — database may be corrupted")
 
     return {
         "access_token": token,
@@ -131,7 +133,9 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
 @router.get("/me")
 async def get_me(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
-    tenant = result.scalar_one()
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=500, detail="Tenant not found")
     return {
         "user": {
             "id": str(current_user.id),

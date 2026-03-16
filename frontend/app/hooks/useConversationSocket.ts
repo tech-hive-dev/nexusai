@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { getApiUrl } from "@/utils/api";
 
 export interface WSEvent {
   type: string;
@@ -17,7 +18,7 @@ export function useConversationSocket(tenantSlug: string | null) {
     if (!tenantSlug) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const base = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
+    const base = (process.env.NEXT_PUBLIC_WS_URL || getApiUrl())
       .replace("https://", "wss://")
       .replace("http://", "ws://");
 

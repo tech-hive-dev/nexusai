@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getApiUrl } from "@/utils/api";
 import ClientList from "@/components/reseller/ClientList";
 import CreateClientModal from "@/components/reseller/CreateClientModal";
 import BillingDashboard from "@/components/reseller/BillingDashboard";
@@ -32,8 +33,8 @@ export default function ResellerPortal() {
     setLoading(true);
     try {
       const [clientsRes, analyticsRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reseller/clients`, { headers: { Authorization: `Bearer ${t}` } }),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reseller/analytics`, { headers: { Authorization: `Bearer ${t}` } }),
+        fetch(`${getApiUrl()}/api/reseller/clients`, { headers: { Authorization: `Bearer ${t}` } }),
+        fetch(`${getApiUrl()}/api/reseller/analytics`, { headers: { Authorization: `Bearer ${t}` } }),
       ]);
       if (clientsRes.status === 401) { router.push("/reseller/login"); return; }
       const clientsData = await clientsRes.json();

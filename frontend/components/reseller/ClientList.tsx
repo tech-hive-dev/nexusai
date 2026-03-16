@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { getApiUrl } from "@/utils/api";
 
 interface Client {
   id: string;
@@ -29,7 +30,7 @@ export default function ClientList({ clients, onRefresh }: Props) {
     setDeleting(clientId);
     try {
       const token = localStorage.getItem("reseller_token");
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reseller/clients/${clientId}`, {
+      await fetch(`${getApiUrl()}/api/reseller/clients/${clientId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

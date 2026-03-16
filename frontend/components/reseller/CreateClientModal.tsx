@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { getApiUrl } from "@/utils/api";
 
 interface Props {
   onClose: () => void;
@@ -24,7 +25,7 @@ export default function CreateClientModal({ onClose, onCreated }: Props) {
     setError("");
     try {
       const token = localStorage.getItem("reseller_token");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reseller/clients`, {
+      const res = await fetch(`${getApiUrl()}/api/reseller/clients`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(form),
