@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getApiUrl } from "@/utils/api";
 const API = getApiUrl();
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
     const [error, setError] = useState("");
@@ -80,5 +80,13 @@ export default function ResetPasswordPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function ResetPasswordPage() {
+    return (
+        <Suspense>
+            <ResetPasswordForm />
+        </Suspense>
     );
 }
