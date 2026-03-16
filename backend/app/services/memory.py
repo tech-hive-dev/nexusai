@@ -86,7 +86,7 @@ Be factual and specific. No filler words."""
 
     try:
         response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-3-5-haiku-latest",
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -107,7 +107,7 @@ Transcript (last 1000 chars): {transcript[-1000:]}"""
 
     try:
         response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-3-5-haiku-latest",
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )

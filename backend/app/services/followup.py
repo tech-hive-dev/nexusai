@@ -109,7 +109,7 @@ async def _generate_followup_text(customer_name: str, business_name: str, last_t
         """
         
         response = await client.messages.create(
-            model="claude-3-haiku-20240307",
+            model="claude-3-5-haiku-latest",
             max_tokens=100,
             messages=[{"role": "user", "content": prompt}]
         )

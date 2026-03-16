@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # AI
     ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-latest"
     EMBEDDING_MODEL: str = "text-embedding-3-small"  # via OpenAI
     OPENAI_API_KEY: str = ""  # for embeddings + Whisper
 

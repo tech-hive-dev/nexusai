@@ -262,7 +262,7 @@ Return ONLY valid JSON array, no explanation. Example:
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
                 json={
-                    "model": "claude-haiku-20240307",
+                    "model": "claude-3-5-haiku-latest",
                     "max_tokens": 2000,
                     "messages": [{"role": "user", "content": prompt}],
                 },

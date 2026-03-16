@@ -94,7 +94,7 @@ async def _cluster_gaps_via_claude(questions: list[str], business_name: str) -> 
     
     try:
         response = await client.messages.create(
-            model="claude-3-haiku-20240307",
+            model="claude-3-5-haiku-latest",
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}]
         )

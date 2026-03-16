@@ -76,7 +76,7 @@ async def check_guardrails(response: str, tenant: Tenant, system_prompt: str = "
 
         try:
             regen = await client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model="claude-3-5-haiku-latest",
                 max_tokens=800,
                 system=system_prompt + constraint_text,
                 messages=[{"role": "user", "content": "[Please provide your response following all constraints above]"}],

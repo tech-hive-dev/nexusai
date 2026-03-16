@@ -190,7 +190,7 @@ Write ONLY the message text. No labels, no explanation."""
 
     try:
         response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-3-5-haiku-latest",
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )

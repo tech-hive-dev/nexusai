@@ -322,7 +322,7 @@ async def recommend_template(
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
-                json={"model": "claude-haiku-20240307", "max_tokens": 10, "messages": [{"role": "user", "content": prompt}]},
+                json={"model": "claude-3-5-haiku-latest", "max_tokens": 10, "messages": [{"role": "user", "content": prompt}]},
                 timeout=10,
             )
         picked = resp.json().get("content", [{}])[0].get("text", "").strip().lower().replace(" ", "_")
