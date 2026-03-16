@@ -65,59 +65,61 @@ async def search_knowledge(
     db: AsyncSession,
     top_k: int = 5,
 ) -> str:
-    """Search knowledge base using vector similarity, with keyword fallback."""
+    """Search knowledge base using vector similarity, with keyword fallback.
+    Uses a savepoint so any DB error rolls back cleanly without aborting the outer transaction."""
     try:
-        if settings.OPENAI_API_KEY:
-            # Vector similarity search
-            query_embedding = await embed_text(query)
-            if query_embedding:
-                embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
-                result = await db.execute(
-                    text("""
-                        SELECT content, metadata,
-                               1 - (embedding <=> :embedding::vector) AS similarity
-                        FROM knowledge_chunks
-                        WHERE tenant_id = :tenant_id
-                              AND embedding IS NOT NULL
-                        ORDER BY embedding <=> :embedding::vector
-                        LIMIT :top_k
-                    """),
-                    {"embedding": embedding_str, "tenant_id": tenant_id, "top_k": top_k},
-                )
-                rows = result.fetchall()
-                if rows:
-                    chunks = [
-                        f"[Relevance: {row.similarity:.0%}]\n{row.content}"
-                        for row in rows if row.similarity > 0.5
-                    ]
-                    if chunks:
-                        return "\n\n---\n\n".join(chunks)
+        async with db.begin_nested():
+            if settings.OPENAI_API_KEY:
+                # Vector similarity search
+                query_embedding = await embed_text(query)
+                if query_embedding:
+                    embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+                    result = await db.execute(
+                        text("""
+                            SELECT content, metadata,
+                                   1 - (embedding <=> :embedding::vector) AS similarity
+                            FROM knowledge_chunks
+                            WHERE tenant_id = :tenant_id
+                                  AND embedding IS NOT NULL
+                            ORDER BY embedding <=> :embedding::vector
+                            LIMIT :top_k
+                        """),
+                        {"embedding": embedding_str, "tenant_id": tenant_id, "top_k": top_k},
+                    )
+                    rows = result.fetchall()
+                    if rows:
+                        chunks = [
+                            f"[Relevance: {row.similarity:.0%}]\n{row.content}"
+                            for row in rows if row.similarity > 0.5
+                        ]
+                        if chunks:
+                            return "\n\n---\n\n".join(chunks)
 
-        # Keyword fallback — works without OpenAI
-        words = [w.strip() for w in query.split() if len(w.strip()) > 2]
-        if not words:
+            # Keyword fallback — works without OpenAI
+            words = [w.strip() for w in query.split() if len(w.strip()) > 2]
+            if not words:
+                return ""
+            like_clause = " OR ".join([f"content ILIKE :kw{i}" for i in range(len(words))])
+            params: dict = {"tenant_id": tenant_id, "top_k": top_k}
+            for i, word in enumerate(words[:5]):
+                params[f"kw{i}"] = f"%{word}%"
+
+            result = await db.execute(
+                text(f"""
+                    SELECT content FROM knowledge_chunks
+                    WHERE tenant_id = :tenant_id AND ({like_clause})
+                    LIMIT :top_k
+                """),
+                params,
+            )
+            rows = result.fetchall()
+            if rows:
+                return "\n\n---\n\n".join(row[0] for row in rows)
             return ""
-        like_clause = " OR ".join([f"content ILIKE :kw{i}" for i in range(len(words))])
-        params: dict = {"tenant_id": tenant_id, "top_k": top_k}
-        for i, word in enumerate(words[:5]):
-            params[f"kw{i}"] = f"%{word}%"
-
-        result = await db.execute(
-            text(f"""
-                SELECT content FROM knowledge_chunks
-                WHERE tenant_id = :tenant_id AND ({like_clause})
-                LIMIT :top_k
-            """),
-            params,
-        )
-        rows = result.fetchall()
-        if rows:
-            return "\n\n---\n\n".join(row[0] for row in rows)
-        return ""
 
     except Exception as e:
-        logger.error(f"Knowledge search error: {e}")
-        return ""
+        logger.warning(f"Knowledge search skipped: {e}")
+    return ""
 
 
 
