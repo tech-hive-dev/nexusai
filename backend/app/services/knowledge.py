@@ -20,29 +20,42 @@ from app.models.knowledge import KnowledgeSource, KnowledgeChunk
 
 # ─── EMBEDDING ──────────────────────────────────────────────
 async def embed_text(text_content: str) -> list[float]:
-    """Generate embedding using OpenAI text-embedding-3-small"""
-    import openai
-    client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    response = await client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text_content[:8000],  # Limit chunk size
-    )
-    return response.data[0].embedding
+    """Generate embedding using OpenAI text-embedding-3-small.
+    Returns empty list if OpenAI key is not configured."""
+    if not settings.OPENAI_API_KEY:
+        return []
+    try:
+        import openai
+        client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        response = await client.embeddings.create(
+            model="text-embedding-3-small",
+            input=text_content[:8000],
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        logger.warning(f"Embedding failed: {e}")
+        return []
 
 
 async def embed_text_batch(texts: list[str]) -> list[list[float]]:
-    import openai
-    client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    # Process in batches of 100
-    all_embeddings = []
-    for i in range(0, len(texts), 100):
-        batch = texts[i:i+100]
-        response = await client.embeddings.create(
-            model="text-embedding-3-small",
-            input=batch,
-        )
-        all_embeddings.extend([d.embedding for d in response.data])
-    return all_embeddings
+    """Batch embeddings — returns empty vectors when OpenAI unavailable."""
+    if not settings.OPENAI_API_KEY:
+        return [[] for _ in texts]
+    try:
+        import openai
+        client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        all_embeddings = []
+        for i in range(0, len(texts), 100):
+            batch = texts[i:i+100]
+            response = await client.embeddings.create(
+                model="text-embedding-3-small",
+                input=batch,
+            )
+            all_embeddings.extend([d.embedding for d in response.data])
+        return all_embeddings
+    except Exception as e:
+        logger.warning(f"Batch embedding failed: {e}")
+        return [[] for _ in texts]
 
 
 # ─── SEARCH ─────────────────────────────────────────────────
@@ -52,43 +65,60 @@ async def search_knowledge(
     db: AsyncSession,
     top_k: int = 5,
 ) -> str:
-    """Search knowledge base using vector similarity"""
+    """Search knowledge base using vector similarity, with keyword fallback."""
     try:
-        # Get query embedding
-        query_embedding = await embed_text(query)
-        embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+        if settings.OPENAI_API_KEY:
+            # Vector similarity search
+            query_embedding = await embed_text(query)
+            if query_embedding:
+                embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+                result = await db.execute(
+                    text("""
+                        SELECT content, metadata,
+                               1 - (embedding <=> :embedding::vector) AS similarity
+                        FROM knowledge_chunks
+                        WHERE tenant_id = :tenant_id
+                              AND embedding IS NOT NULL
+                        ORDER BY embedding <=> :embedding::vector
+                        LIMIT :top_k
+                    """),
+                    {"embedding": embedding_str, "tenant_id": tenant_id, "top_k": top_k},
+                )
+                rows = result.fetchall()
+                if rows:
+                    chunks = [
+                        f"[Relevance: {row.similarity:.0%}]\n{row.content}"
+                        for row in rows if row.similarity > 0.5
+                    ]
+                    if chunks:
+                        return "\n\n---\n\n".join(chunks)
 
-        # Vector similarity search
+        # Keyword fallback — works without OpenAI
+        words = [w.strip() for w in query.split() if len(w.strip()) > 2]
+        if not words:
+            return ""
+        like_clause = " OR ".join([f"content ILIKE :kw{i}" for i in range(len(words))])
+        params: dict = {"tenant_id": tenant_id, "top_k": top_k}
+        for i, word in enumerate(words[:5]):
+            params[f"kw{i}"] = f"%{word}%"
+
         result = await db.execute(
-            text("""
-                SELECT content, metadata,
-                       1 - (embedding <=> :embedding::vector) AS similarity
-                FROM knowledge_chunks
-                WHERE tenant_id = :tenant_id
-                ORDER BY embedding <=> :embedding::vector
+            text(f"""
+                SELECT content FROM knowledge_chunks
+                WHERE tenant_id = :tenant_id AND ({like_clause})
                 LIMIT :top_k
             """),
-            {
-                "embedding": embedding_str,
-                "tenant_id": tenant_id,
-                "top_k": top_k,
-            }
+            params,
         )
         rows = result.fetchall()
-
-        if not rows:
-            return ""
-
-        chunks = []
-        for row in rows:
-            if row.similarity > 0.5:  # Only include relevant chunks
-                chunks.append(f"[Relevance: {row.similarity:.0%}]\n{row.content}")
-
-        return "\n\n---\n\n".join(chunks)
+        if rows:
+            return "\n\n---\n\n".join(row[0] for row in rows)
+        return ""
 
     except Exception as e:
         logger.error(f"Knowledge search error: {e}")
         return ""
+
 
 
 # ─── INGESTION ──────────────────────────────────────────────
@@ -106,16 +136,17 @@ async def ingest_source(source_id: str, db: AsyncSession):
 
     try:
         if source.type == "website":
-            # Default to depth 1 (recursive) for website sources
             chunks = await _ingest_website(source.url, depth=1)
         elif source.type == "pdf":
             chunks = await _ingest_pdf(source.file_path)
-        elif source.type == "excel":
+        elif source.type in ("excel", "csv"):
             chunks = await _ingest_excel(source.file_path)
         elif source.type == "youtube":
             chunks = await _ingest_youtube(source.url)
         elif source.type == "manual":
             chunks = [source.url]  # url field stores manual content
+        elif source.type == "word":
+            chunks = await _ingest_word(source.file_path)
         else:
             raise ValueError(f"Unknown source type: {source.type}")
 
@@ -124,15 +155,17 @@ async def ingest_source(source_id: str, db: AsyncSession):
             delete(KnowledgeChunk).where(KnowledgeChunk.source_id == source_id)
         )
 
-        # Embed and store chunks
+
+        # Embed and store chunks (embedding may be empty if OPENAI_API_KEY missing)
         if chunks:
             embeddings = await embed_text_batch(chunks)
-            for chunk_text, embedding in zip(chunks, embeddings):
+            for i, chunk_text in enumerate(chunks):
+                emb = embeddings[i] if i < len(embeddings) else []
                 chunk = KnowledgeChunk(
                     tenant_id=source.tenant_id,
                     source_id=source.id,
                     content=chunk_text,
-                    embedding=embedding,
+                    embedding=emb if emb else None,  # store None when no embedding
                 )
                 db.add(chunk)
 
@@ -192,6 +225,26 @@ async def _ingest_website(url: str, depth: int = 1) -> list[str]:
                 logger.error(f"Failed to crawl {current_url}: {e}")
 
     return all_chunks
+
+
+async def _ingest_word(file_path: str) -> list[str]:
+    """Extract text from .docx Word document"""
+    try:
+        from docx import Document
+        doc = Document(file_path)
+        full_text = "\n".join(para.text for para in doc.paragraphs if para.text.strip())
+        return _chunk_text(full_text, chunk_size=400)
+    except ImportError:
+        # Fallback: try reading as plain text
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read().decode("utf-8", errors="ignore")
+            return _chunk_text(content, chunk_size=400)
+        except Exception:
+            return []
+    except Exception as e:
+        logger.error(f"Word document ingestion error: {e}")
+        return []
 
 
 async def _ingest_pdf(file_path: str) -> list[str]:
