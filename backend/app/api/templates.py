@@ -153,29 +153,24 @@ async def list_templates(
     hidden = tenant.hidden_templates or []
     templates = [t for t in BUILTIN_TEMPLATES if t["id"] not in hidden]
 
-    # Add custom templates from DB
-    result = await db.execute(
-        text("SELECT * FROM agent_templates WHERE tenant_id = :tid ORDER BY created_at"),
-        {"tid": str(tenant.id)},
-    )
-    for row in result.mappings().all():
-        tmpl = dict(row)
-        tmpl["id"] = str(tmpl["id"]) if tmpl.get("id") else tmpl["id"]
-        tmpl["is_custom"] = True
-        if tmpl["id"] not in hidden:
-            templates.append(tmpl)
-
-    # Fetch applied_template_id so the frontend can show "Applied" badge
-    tid_result = await db.execute(
-        text("SELECT applied_template_id FROM tenants WHERE id = :tid"),
-        {"tid": str(tenant.id)},
-    )
-    tid_row = tid_result.fetchone()
-    applied_template_id = tid_row[0] if tid_row else None
+    # Add custom templates from DB (wrapped so a missing table doesn't kill the response)
+    try:
+        result = await db.execute(
+            text("SELECT * FROM agent_templates WHERE tenant_id = :tid ORDER BY created_at"),
+            {"tid": str(tenant.id)},
+        )
+        for row in result.mappings().all():
+            tmpl = dict(row)
+            tmpl["id"] = str(tmpl["id"]) if tmpl.get("id") else tmpl["id"]
+            tmpl["is_custom"] = True
+            if tmpl["id"] not in hidden:
+                templates.append(tmpl)
+    except Exception:
+        pass  # agent_templates table may not exist yet; built-ins still returned
 
     return {
         "templates": templates,
-        "applied_template_id": applied_template_id,
+        "applied_template_id": tenant.applied_template_id,
         "hidden_count": len(hidden),
     }
 
