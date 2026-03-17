@@ -2,8 +2,11 @@
 Agent Marketplace / Industry Templates API
 ────────────────────────────────────────────
 GET  /api/templates          — list all templates
+GET  /api/templates/recommend — AI-powered recommendation (must be before /{id})
 GET  /api/templates/{id}     — get one template
 POST /api/templates/{id}/deploy — clone template config to tenant
+DELETE /api/templates/applied — remove applied template + seeded KB
+DELETE /api/templates/hidden  — restore all hidden built-in templates
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -162,105 +165,76 @@ async def list_templates(
         if tmpl["id"] not in hidden:
             templates.append(tmpl)
 
-    return {"templates": templates}
-
-
-@router.get("/{template_id}")
-async def get_template(
-    template_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    tmpl = next((t for t in BUILTIN_TEMPLATES if t["id"] == template_id), None)
-    if not tmpl:
-        result = await db.execute(
-            text("SELECT * FROM agent_templates WHERE id = :id AND tenant_id = :tid"),
-            {"id": template_id, "tid": str(current_user.tenant_id)},
-        )
-        row = result.mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="Template not found")
-        tmpl = dict(row)
-        tmpl["is_custom"] = True
-    return tmpl
-
-
-@router.post("/{template_id}/deploy")
-async def deploy_template(
-    template_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Apply a template's system prompt and config defaults to the current tenant."""
-    tmpl = next((t for t in BUILTIN_TEMPLATES if t["id"] == template_id), None)
-    if not tmpl:
-        # Check custom templates in DB
-        result = await db.execute(
-            text("SELECT * FROM agent_templates WHERE id = :id AND tenant_id = :tid"),
-            {"id": template_id, "tid": str(current_user.tenant_id)},
-        )
-        row = result.mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="Template not found")
-        tmpl = dict(row)
-        import json as _json
-        tmpl["starter_knowledge"] = _json.loads(tmpl["starter_knowledge"]) if isinstance(tmpl["starter_knowledge"], str) else (tmpl["starter_knowledge"] or [])
-        tmpl["config_defaults"] = _json.loads(tmpl["config_defaults"]) if isinstance(tmpl["config_defaults"], str) else (tmpl["config_defaults"] or {})
-
-    config = tmpl.get("config_defaults", {})
-
-    # Apply config to tenant, tracking applied template
-    set_parts = ["agent_persona = :persona", "industry = :industry", "applied_template_id = :tmpl_id"]
-    params: dict = {
-        "persona": config.get("agent_persona", "Friendly, professional, helpful"),
-        "industry": tmpl["industry"],
-        "tmpl_id": template_id,
-        "tenant_id": str(current_user.tenant_id),
-    }
-    if "escalation_after_failures" in config:
-        set_parts.append("escalation_after_failures = :escalation_after_failures")
-        params["escalation_after_failures"] = config["escalation_after_failures"]
-
-    await db.execute(
-        text(f"UPDATE tenants SET {', '.join(set_parts)} WHERE id = :tenant_id"),
-        params,
+    # Fetch applied_template_id so the frontend can show "Applied" badge
+    tid_result = await db.execute(
+        text("SELECT applied_template_id FROM tenants WHERE id = :tid"),
+        {"tid": str(tenant.id)},
     )
-
-    # Seed starter knowledge entries tagged with template_id for removal later
-    import json as _json
-    starter = tmpl.get("starter_knowledge", [])
-    for item in starter:
-        source_id = str(uuid.uuid4())
-        source_meta = _json.dumps({"template_id": template_id})
-        await db.execute(
-            text("""
-                INSERT INTO knowledge_sources (id, tenant_id, type, name, status, source_meta)
-                VALUES (:id, :tenant_id, 'manual', :name, 'indexed', :source_meta::jsonb)
-                ON CONFLICT DO NOTHING
-            """),
-            {"id": source_id, "tenant_id": str(current_user.tenant_id), "name": item["title"], "source_meta": source_meta},
-        )
-        chunk_id = str(uuid.uuid4())
-        await db.execute(
-            text("""
-                INSERT INTO knowledge_chunks (id, tenant_id, source_id, content)
-                VALUES (:id, :tenant_id, :source_id, :content)
-            """),
-            {
-                "id": chunk_id,
-                "tenant_id": str(current_user.tenant_id),
-                "source_id": source_id,
-                "content": f"{item['title']}\n{item['content']}",
-            },
-        )
-
-    await db.commit()
+    tid_row = tid_result.fetchone()
+    applied_template_id = tid_row[0] if tid_row else None
 
     return {
-        "success": True,
-        "template": tmpl["name"],
-        "message": f"Template '{tmpl['name']}' applied. {len(starter)} knowledge entries added.",
+        "templates": templates,
+        "applied_template_id": applied_template_id,
+        "hidden_count": len(hidden),
     }
+
+
+# ─── IMPORTANT: /recommend and /applied must come BEFORE /{template_id} ───────
+
+@router.get("/recommend")
+async def recommend_template(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Use Anthropic to pick the best template for this tenant's industry/knowledge."""
+    import os
+
+    result = await db.execute(text("SELECT industry FROM tenants WHERE id = :tid"), {"tid": str(current_user.tenant_id)})
+    row = result.fetchone()
+    industry = (row[0] or "other").lower() if row else "other"
+
+    ks_result = await db.execute(
+        text("SELECT name FROM knowledge_sources WHERE tenant_id = :tid ORDER BY created_at DESC LIMIT 5"),
+        {"tid": str(current_user.tenant_id)}
+    )
+    knowledge_names = [r[0] for r in ks_result.fetchall()]
+
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if not anthropic_key:
+        INDUSTRY_MAP = {
+            "restaurant": "tmpl-restaurant", "food": "tmpl-restaurant", "cafe": "tmpl-restaurant",
+            "medical": "tmpl-medical", "clinic": "tmpl-medical", "health": "tmpl-medical",
+            "ecommerce": "tmpl-ecommerce", "shop": "tmpl-ecommerce", "store": "tmpl-ecommerce",
+            "real estate": "tmpl-realestate", "property": "tmpl-realestate",
+            "salon": "tmpl-salon", "beauty": "tmpl-salon",
+            "legal": "tmpl-legal", "law": "tmpl-legal",
+        }
+        for keyword, tmpl_id in INDUSTRY_MAP.items():
+            if keyword in industry:
+                return {"recommended_id": tmpl_id}
+        return {"recommended_id": None}
+
+    try:
+        import httpx
+        prompt = (
+            f"A business has industry='{industry}' and knowledge sources: {knowledge_names}.\n"
+            f"Available templates: restaurant, medical, ecommerce, real_estate, salon, legal.\n"
+            f"Reply with ONLY one word: the best industry match (e.g. 'restaurant')."
+        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                json={"model": settings.TEMPLATE_RECOMMEND_MODEL, "max_tokens": 10, "messages": [{"role": "user", "content": prompt}]},
+                timeout=10,
+            )
+        picked = resp.json().get("content", [{}])[0].get("text", "").strip().lower().replace(" ", "_")
+        tmpl_id_map = {"restaurant": "tmpl-restaurant", "medical": "tmpl-medical", "ecommerce": "tmpl-ecommerce",
+                       "real_estate": "tmpl-realestate", "salon": "tmpl-salon", "legal": "tmpl-legal"}
+        return {"recommended_id": tmpl_id_map.get(picked)}
+    except Exception:
+        return {"recommended_id": None}
 
 
 @router.delete("/applied")
@@ -297,6 +271,115 @@ async def remove_applied_template(
 
     await db.commit()
     return {"success": True, "removed_template_id": applied_id}
+
+
+@router.delete("/hidden")
+async def restore_hidden_templates(
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear hidden_templates list so all built-in templates become visible again."""
+    await db.execute(
+        text("UPDATE tenants SET hidden_templates = '[]'::jsonb WHERE id = :tid"),
+        {"tid": str(tenant.id)},
+    )
+    await db.commit()
+    return {"success": True, "message": "All built-in templates restored"}
+
+
+@router.get("/{template_id}")
+async def get_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tmpl = next((t for t in BUILTIN_TEMPLATES if t["id"] == template_id), None)
+    if not tmpl:
+        result = await db.execute(
+            text("SELECT * FROM agent_templates WHERE id = :id AND tenant_id = :tid"),
+            {"id": template_id, "tid": str(current_user.tenant_id)},
+        )
+        row = result.mappings().one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="Template not found")
+        tmpl = dict(row)
+        tmpl["is_custom"] = True
+    return tmpl
+
+
+@router.post("/{template_id}/deploy")
+async def deploy_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Apply a template's system prompt and config defaults to the current tenant."""
+    tmpl = next((t for t in BUILTIN_TEMPLATES if t["id"] == template_id), None)
+    if not tmpl:
+        result = await db.execute(
+            text("SELECT * FROM agent_templates WHERE id = :id AND tenant_id = :tid"),
+            {"id": template_id, "tid": str(current_user.tenant_id)},
+        )
+        row = result.mappings().one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="Template not found")
+        tmpl = dict(row)
+        import json as _json
+        tmpl["starter_knowledge"] = _json.loads(tmpl["starter_knowledge"]) if isinstance(tmpl["starter_knowledge"], str) else (tmpl["starter_knowledge"] or [])
+        tmpl["config_defaults"] = _json.loads(tmpl["config_defaults"]) if isinstance(tmpl["config_defaults"], str) else (tmpl["config_defaults"] or {})
+
+    config = tmpl.get("config_defaults", {})
+
+    set_parts = ["agent_persona = :persona", "industry = :industry", "applied_template_id = :tmpl_id"]
+    params: dict = {
+        "persona": config.get("agent_persona", "Friendly, professional, helpful"),
+        "industry": tmpl["industry"],
+        "tmpl_id": template_id,
+        "tenant_id": str(current_user.tenant_id),
+    }
+    if "escalation_after_failures" in config:
+        set_parts.append("escalation_after_failures = :escalation_after_failures")
+        params["escalation_after_failures"] = config["escalation_after_failures"]
+
+    await db.execute(
+        text(f"UPDATE tenants SET {', '.join(set_parts)} WHERE id = :tenant_id"),
+        params,
+    )
+
+    import json as _json
+    starter = tmpl.get("starter_knowledge", [])
+    for item in starter:
+        source_id = str(uuid.uuid4())
+        source_meta = _json.dumps({"template_id": template_id})
+        await db.execute(
+            text("""
+                INSERT INTO knowledge_sources (id, tenant_id, type, name, status, source_meta)
+                VALUES (:id, :tenant_id, 'manual', :name, 'indexed', :source_meta::jsonb)
+                ON CONFLICT DO NOTHING
+            """),
+            {"id": source_id, "tenant_id": str(current_user.tenant_id), "name": item["title"], "source_meta": source_meta},
+        )
+        chunk_id = str(uuid.uuid4())
+        await db.execute(
+            text("""
+                INSERT INTO knowledge_chunks (id, tenant_id, source_id, content)
+                VALUES (:id, :tenant_id, :source_id, :content)
+            """),
+            {
+                "id": chunk_id,
+                "tenant_id": str(current_user.tenant_id),
+                "source_id": source_id,
+                "content": f"{item['title']}\n{item['content']}",
+            },
+        )
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "template": tmpl["name"],
+        "message": f"Template '{tmpl['name']}' applied. {len(starter)} knowledge entries added.",
+    }
 
 
 # ─── Custom Template CRUD ─────────────────────────────────────────
@@ -353,8 +436,7 @@ async def delete_template(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a custom template from DB or hide a built-in one."""
-    # Check if it's a custom template in DB
+    """Delete a custom template from DB. Built-in templates cannot be deleted."""
     result = await db.execute(
         text("SELECT id FROM agent_templates WHERE id = :id AND tenant_id = :tid"),
         {"id": template_id, "tid": str(tenant.id)},
@@ -367,72 +449,4 @@ async def delete_template(
         await db.commit()
         return {"success": True, "message": "Custom template deleted"}
 
-    # Mark built-in as hidden for this tenant
-    hidden = list(tenant.hidden_templates or [])
-    if template_id not in hidden:
-        hidden.append(template_id)
-        tenant.hidden_templates = hidden
-        await db.commit()
-        return {"success": True, "message": "Template hidden"}
-
-    return {"success": True, "message": "Already hidden"}
-
-
-@router.get("/recommend")
-async def recommend_template(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Use Anthropic to pick the best template for this tenant's industry/knowledge."""
-    import os
-    from sqlalchemy import text as _text
-
-    # Get tenant industry
-    result = await db.execute(_text("SELECT industry FROM tenants WHERE id = :tid"), {"tid": str(current_user.tenant_id)})
-    row = result.fetchone()
-    industry = (row[0] or "other").lower() if row else "other"
-
-    # Get up to 5 recent knowledge source names for context
-    ks_result = await db.execute(
-        _text("SELECT name FROM knowledge_sources WHERE tenant_id = :tid ORDER BY created_at DESC LIMIT 5"),
-        {"tid": str(current_user.tenant_id)}
-    )
-    knowledge_names = [r[0] for r in ks_result.fetchall()]
-
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-    if not anthropic_key:
-        # Fallback: match by industry keyword
-        INDUSTRY_MAP = {
-            "restaurant": "tmpl-restaurant", "food": "tmpl-restaurant", "cafe": "tmpl-restaurant",
-            "medical": "tmpl-medical", "clinic": "tmpl-medical", "health": "tmpl-medical",
-            "ecommerce": "tmpl-ecommerce", "shop": "tmpl-ecommerce", "store": "tmpl-ecommerce",
-            "real estate": "tmpl-realestate", "property": "tmpl-realestate",
-            "salon": "tmpl-salon", "beauty": "tmpl-salon",
-            "legal": "tmpl-legal", "law": "tmpl-legal",
-        }
-        for keyword, tmpl_id in INDUSTRY_MAP.items():
-            if keyword in industry:
-                return {"recommended_id": tmpl_id}
-        return {"recommended_id": None}
-
-    try:
-        import httpx
-        prompt = (
-            f"A business has industry='{industry}' and knowledge sources: {knowledge_names}.\n"
-            f"Available templates: restaurant, medical, ecommerce, real_estate, salon, legal.\n"
-            f"Reply with ONLY one word: the best industry match (e.g. 'restaurant')."
-        )
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
-                json={"model": settings.TEMPLATE_RECOMMEND_MODEL, "max_tokens": 10, "messages": [{"role": "user", "content": prompt}]},
-                timeout=10,
-            )
-        picked = resp.json().get("content", [{}])[0].get("text", "").strip().lower().replace(" ", "_")
-        tmpl_id_map = {"restaurant": "tmpl-restaurant", "medical": "tmpl-medical", "ecommerce": "tmpl-ecommerce",
-                       "real_estate": "tmpl-realestate", "salon": "tmpl-salon", "legal": "tmpl-legal"}
-        return {"recommended_id": tmpl_id_map.get(picked)}
-    except Exception:
-        return {"recommended_id": None}
-
+    raise HTTPException(status_code=400, detail="Built-in templates cannot be deleted. Use 'Remove Applied Template' to unapply.")

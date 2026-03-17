@@ -1,4 +1,4 @@
-// Templates.tsx — with delete, custom template, and AI recommendation
+// Templates.tsx — with unapply, restore hidden, and custom template builder
 "use client";
 import { useEffect, useState } from "react";
 
@@ -26,9 +26,13 @@ export default function Templates() {
   const [error, setError] = useState<string | null>(null);
   const [deploying, setDeploying] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [unapplying, setUnapplying] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [showCustom, setShowCustom] = useState(false);
   const [recommendedId, setRecommendedId] = useState<string | null>(null);
+  const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
+  const [hiddenCount, setHiddenCount] = useState(0);
   const [form, setForm] = useState<CustomForm>({ name: "", industry: "custom", description: "", icon: "💼" });
 
   const load = async () => {
@@ -44,6 +48,8 @@ export default function Templates() {
       }
       const data = await res.json();
       setTemplates(data.templates || []);
+      setAppliedTemplateId(data.applied_template_id || null);
+      setHiddenCount(data.hidden_count || 0);
     } catch (err: any) {
       setError(err?.message || "Failed to load templates.");
       setTemplates([]);
@@ -52,7 +58,6 @@ export default function Templates() {
     }
   };
 
-  // Load templates + fetch AI recommendation
   useEffect(() => {
     load();
     fetch(`${API}/api/templates/recommend`, { headers: { Authorization: `Bearer ${token()}` } })
@@ -69,11 +74,38 @@ export default function Templates() {
       const data = await res.json();
       setSuccess(data.message || `${name} applied!`);
       setTimeout(() => setSuccess(null), 5000);
+      await load();
     } finally { setDeploying(null); }
   };
 
-  const deleteTemplate = async (id: string) => {
-    if (!confirm("Delete this template? This cannot be undone.")) return;
+  const unapplyTemplate = async () => {
+    if (!confirm("Remove the applied template? This will delete all knowledge entries that were seeded by it and reset your agent persona.")) return;
+    setUnapplying(true);
+    try {
+      const res = await fetch(`${API}/api/templates/applied`, {
+        method: "DELETE", headers: { Authorization: `Bearer ${token()}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccess("Template removed. Knowledge entries and persona reset.");
+        setTimeout(() => setSuccess(null), 5000);
+        await load();
+      }
+    } finally { setUnapplying(false); }
+  };
+
+  const restoreHidden = async () => {
+    setRestoring(true);
+    try {
+      await fetch(`${API}/api/templates/hidden`, {
+        method: "DELETE", headers: { Authorization: `Bearer ${token()}` },
+      });
+      await load();
+    } finally { setRestoring(false); }
+  };
+
+  const deleteCustomTemplate = async (id: string) => {
+    if (!confirm("Delete this custom template? This cannot be undone.")) return;
     setDeleting(id);
     try {
       await fetch(`${API}/api/templates/${id}`, {
@@ -94,7 +126,6 @@ export default function Templates() {
     if (data.id) { await load(); setShowCustom(false); setForm({ name: "", industry: "custom", description: "", icon: "💼" }); }
   };
 
-  // Sort: recommended first
   const sorted = [...templates].sort((a, b) => {
     if (a.id === recommendedId) return -1;
     if (b.id === recommendedId) return 1;
@@ -103,7 +134,7 @@ export default function Templates() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
           <h2 style={{ color: "#e8eaf0", fontWeight: 700, fontSize: 22 }}>Agent Templates</h2>
           <p style={{ color: "#475569", fontSize: 14, marginTop: 4 }}>One-click deploy a pre-configured AI agent for your industry</p>
@@ -112,6 +143,38 @@ export default function Templates() {
           + Build Custom
         </button>
       </div>
+
+      {/* Applied template banner */}
+      {appliedTemplateId && (
+        <div style={{ background: "rgba(79,255,176,0.06)", border: "1px solid rgba(79,255,176,0.25)", borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ color: "#4FFFB0", fontSize: 14 }}>
+            ✓ Template <strong>{templates.find(t => t.id === appliedTemplateId)?.name || appliedTemplateId}</strong> is currently applied to your agent.
+          </div>
+          <button
+            onClick={unapplyTemplate}
+            disabled={unapplying}
+            style={{ background: "rgba(255,94,94,0.1)", border: "1px solid rgba(255,94,94,0.3)", color: "#FF5E5E", borderRadius: 7, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", marginLeft: 12 }}
+          >
+            {unapplying ? "Removing…" : "✕ Remove Template"}
+          </button>
+        </div>
+      )}
+
+      {/* Restore hidden templates banner */}
+      {hiddenCount > 0 && (
+        <div style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ color: "#F59E0B", fontSize: 14 }}>
+            {hiddenCount} built-in template{hiddenCount > 1 ? "s are" : " is"} hidden.
+          </div>
+          <button
+            onClick={restoreHidden}
+            disabled={restoring}
+            style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", color: "#F59E0B", borderRadius: 7, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", marginLeft: 12 }}
+          >
+            {restoring ? "Restoring…" : "↺ Restore All"}
+          </button>
+        </div>
+      )}
 
       {success && (
         <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 10, padding: "12px 16px", color: "#10B981", fontSize: 14, marginBottom: 20 }}>
@@ -177,8 +240,13 @@ export default function Templates() {
       )}
 
       {!loading && sorted.length === 0 && !error && (
-        <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 13 }}>
-          No templates available yet.
+        <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, textAlign: "center", padding: "40px 0" }}>
+          No templates visible.{" "}
+          {hiddenCount > 0 && (
+            <button onClick={restoreHidden} style={{ background: "none", border: "none", color: "#4FFFB0", cursor: "pointer", textDecoration: "underline", fontSize: 13 }}>
+              Restore hidden templates
+            </button>
+          )}
         </div>
       )}
 
@@ -186,12 +254,17 @@ export default function Templates() {
         {sorted.map(t => {
           const accentColor = INDUSTRY_COLORS[t.industry] || "#6366F1";
           const isRecommended = t.id === recommendedId;
+          const isApplied = t.id === appliedTemplateId;
           return (
-            <div key={t.id} style={{ background: "rgba(255,255,255,0.03)", border: isRecommended ? `1px solid ${accentColor}60` : "1px solid rgba(255,255,255,0.08)", borderTop: `3px solid ${accentColor}`, borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 12, position: "relative" }}>
-              {/* Recommended badge */}
-              {isRecommended && (
+            <div key={t.id} style={{ background: "rgba(255,255,255,0.03)", border: isApplied ? "1px solid rgba(79,255,176,0.4)" : isRecommended ? `1px solid ${accentColor}60` : "1px solid rgba(255,255,255,0.08)", borderTop: `3px solid ${isApplied ? "#4FFFB0" : accentColor}`, borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 12, position: "relative" }}>
+              {isApplied && (
+                <div style={{ position: "absolute", top: -1, right: 12, background: "#4FFFB0", color: "#000", fontSize: 10, fontWeight: 800, padding: "3px 10px", borderRadius: "0 0 8px 8px", fontFamily: "monospace" }}>
+                  ✓ APPLIED
+                </div>
+              )}
+              {!isApplied && isRecommended && (
                 <div style={{ position: "absolute", top: -1, right: 12, background: accentColor, color: "#000", fontSize: 10, fontWeight: 800, padding: "3px 10px", borderRadius: "0 0 8px 8px", fontFamily: "monospace" }}>
-                  ✨ RECOMMENDED FOR YOU
+                  ✨ RECOMMENDED
                 </div>
               )}
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -201,18 +274,30 @@ export default function Templates() {
                   {t.is_premium && <span style={{ background: "rgba(245,158,11,0.15)", color: "#F59E0B", fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 600 }}>PRO</span>}
                   {t.is_custom && <span style={{ background: "rgba(79,255,176,0.1)", color: "#4FFFB0", fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 600 }}>CUSTOM</span>}
                 </div>
-                {/* Delete button for custom templates or any template */}
-                <button onClick={() => deleteTemplate(t.id)} disabled={deleting === t.id}
-                  style={{ background: "none", border: "none", color: "rgba(255,94,94,0.5)", cursor: "pointer", fontSize: 16, padding: 4, lineHeight: 1 }}
-                  title="Delete template">
-                  {deleting === t.id ? "..." : "🗑"}
-                </button>
+                {/* Only show delete for custom templates */}
+                {t.is_custom && (
+                  <button onClick={() => deleteCustomTemplate(t.id)} disabled={deleting === t.id}
+                    style={{ background: "none", border: "none", color: "rgba(255,94,94,0.5)", cursor: "pointer", fontSize: 16, padding: 4, lineHeight: 1 }}
+                    title="Delete custom template">
+                    {deleting === t.id ? "..." : "🗑"}
+                  </button>
+                )}
               </div>
               <p style={{ color: "#64748B", fontSize: 13, lineHeight: 1.6, flex: 1 }}>{t.description}</p>
-              <button onClick={() => deploy(t.id, t.name)} disabled={deploying === t.id}
-                style={{ padding: "9px 0", background: deploying === t.id ? "rgba(99,102,241,0.1)" : `${accentColor}20`, border: `1px solid ${accentColor}40`, borderRadius: 8, color: accentColor, fontSize: 13, fontWeight: 600, cursor: deploying === t.id ? "not-allowed" : "pointer" }}>
-                {deploying === t.id ? "Deploying…" : "Deploy Template →"}
-              </button>
+              {isApplied ? (
+                <button
+                  onClick={unapplyTemplate}
+                  disabled={unapplying}
+                  style={{ padding: "9px 0", background: "rgba(255,94,94,0.08)", border: "1px solid rgba(255,94,94,0.3)", borderRadius: 8, color: "#FF5E5E", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                >
+                  {unapplying ? "Removing…" : "✕ Remove Template"}
+                </button>
+              ) : (
+                <button onClick={() => deploy(t.id, t.name)} disabled={deploying === t.id}
+                  style={{ padding: "9px 0", background: deploying === t.id ? "rgba(99,102,241,0.1)" : `${accentColor}20`, border: `1px solid ${accentColor}40`, borderRadius: 8, color: accentColor, fontSize: 13, fontWeight: 600, cursor: deploying === t.id ? "not-allowed" : "pointer" }}>
+                  {deploying === t.id ? "Deploying…" : "Deploy Template →"}
+                </button>
+              )}
             </div>
           );
         })}
