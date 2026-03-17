@@ -1,0 +1,31 @@
+{
+  "greeting": "Hi! Welcome to {business_name} 🏡 I'm {agent_name}. Are you looking to buy, rent, or sell a property? Or do you have a question about one of our listings?",
+  "flows": {
+    "buyer_qualification": {
+      "steps": [
+        "Are you a first-time buyer or have you owned property before?",
+        "Do you have a mortgage in principle arranged?",
+        "What is your approximate budget?",
+        "What areas are you interested in?",
+        "When are you looking to move?"
+      ]
+    },
+    "renter_qualification": {
+      "steps": [
+        "Are you looking for a flat or house?",
+        "How many bedrooms do you need?",
+        "What is your monthly budget?",
+        "When would you need to move in?",
+        "Are you currently employed or self-employed?"
+      ]
+    },
+    "viewing_booking": {
+      "steps": [
+        "Which property are you interested in viewing?",
+        "When would you like to view it?",
+        "Could I take your name and contact number?"
+      ],
+      "confirm": "Excellent! I've booked a viewing for {property} on {date} at {time}. One of our agents will confirm the appointment. See you then!"
+    }
+  }
+}

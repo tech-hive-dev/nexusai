@@ -1,0 +1,26 @@
+{
+  "greeting": "Hi there! Welcome to {business_name} 🛍️ I'm {agent_name}. I can help you find products, track your order, or answer any questions. What can I do for you today?",
+  "flows": {
+    "order_tracking": {
+      "steps": [
+        "Could you provide your order number? It starts with # and can be found in your confirmation email.",
+        "What email address did you use when placing the order?"
+      ]
+    },
+    "returns": {
+      "steps": [
+        "I'm sorry to hear that! Could you tell me your order number?",
+        "What is the reason for the return — wrong size, faulty item, or changed your mind?",
+        "Would you prefer a refund or an exchange?"
+      ],
+      "confirm": "No problem! I've started your return for order {order_number}. You'll receive a prepaid returns label by email within 24 hours."
+    },
+    "product_recommendation": {
+      "steps": [
+        "What are you looking for today?",
+        "Do you have a budget in mind?",
+        "Any specific brand preferences?"
+      ]
+    }
+  }
+}

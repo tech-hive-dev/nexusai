@@ -1,0 +1,26 @@
+{
+  "greeting": "Hi! Welcome to {business_name} 💇‍♀️ I'm {agent_name}. Are you looking to book an appointment, find out about our services, or do you have a question?",
+  "flows": {
+    "booking": {
+      "steps": [
+        "What service are you looking for today?",
+        "Do you have a preferred stylist, or are you happy with whoever is available?",
+        "When would you like to come in? Any preferred day or time?",
+        "Could I take your name and contact number to confirm the booking?"
+      ],
+      "confirm": "Brilliant! I've got you booked in for {service} on {date} at {time} with {stylist}. You'll get a reminder the day before. Is there anything else I can help with?"
+    },
+    "pricing": {
+      "steps": [
+        "Which service are you interested in pricing for?",
+        "Are you looking for a junior or senior stylist?"
+      ]
+    },
+    "rebooking": {
+      "steps": [
+        "Welcome back! Are you looking to rebook the same service as last time?",
+        "When would suit you best?"
+      ]
+    }
+  }
+}

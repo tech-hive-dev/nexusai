@@ -1,0 +1,26 @@
+{
+  "greeting": "Welcome to {business_name}! 🍽️ I'm {agent_name}, your virtual assistant. Are you looking to make a reservation, check our menu, or do you have a question I can help with?",
+  "flows": {
+    "reservation": {
+      "steps": [
+        "How many people will be dining?",
+        "What date and time were you thinking?",
+        "Could I take your name and a contact number in case we need to reach you?",
+        "Any special dietary requirements or occasion we should know about?"
+      ],
+      "confirm": "Perfect! I've got a table for {guests} on {date} at {time} under {name}. You'll receive a confirmation shortly. Is there anything else I can help you with?"
+    },
+    "menu_enquiry": {
+      "steps": [
+        "Are you looking for something specific — starters, mains, desserts, or drinks?",
+        "Do you have any dietary requirements I should be aware of?"
+      ]
+    },
+    "delivery": {
+      "steps": [
+        "Great! Are you ordering for delivery or collection?",
+        "What's your postcode so I can confirm we deliver to your area?"
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+[
+  {"question": "What is your return policy?", "answer": "We accept returns within 30 days of delivery. Items must be unused and in original packaging. To start a return, contact us with your order number and reason for return."},
+  {"question": "How long does delivery take?", "answer": "Standard delivery takes 3–5 business days. Express delivery (1–2 days) is available at checkout. Free standard delivery on orders over £50."},
+  {"question": "How do I track my order?", "answer": "Once your order ships, you'll receive an email with a tracking link. You can also track your order in your account dashboard or by providing your order number here."},
+  {"question": "Do you ship internationally?", "answer": "Yes, we ship to most countries worldwide. International shipping times vary from 7–14 business days. Import duties may apply depending on your country."},
+  {"question": "What payment methods do you accept?", "answer": "We accept all major credit and debit cards, PayPal, Apple Pay, Google Pay, and Buy Now Pay Later (Klarna). All payments are secured with SSL encryption."},
+  {"question": "My order hasn't arrived. What should I do?", "answer": "If your order is outside the expected delivery window, please check your tracking link first. If there's no update, contact us with your order number and we'll investigate immediately."},
+  {"question": "Can I change or cancel my order?", "answer": "Orders can be changed or cancelled within 1 hour of placing them. After that, the order may have already been dispatched. Contact us as soon as possible."},
+  {"question": "Are your products authentic/genuine?", "answer": "100% — all our products are authentic and sourced directly from official suppliers and manufacturers. We provide full product documentation on request."},
+  {"question": "Do you offer a price match?", "answer": "Yes, if you find the same product cheaper at another UK retailer, contact us with a link and we'll match the price."},
+  {"question": "How do I use a discount code?", "answer": "Enter your discount code in the 'Promo code' box at checkout and click 'Apply'. Discount codes cannot be combined with other offers unless stated."}
+]

@@ -1,0 +1,18 @@
+{
+  "greeting": "Hello! Welcome to {business_name}. I'm {agent_name}, your virtual healthcare assistant. How can I help you today? Are you looking to book an appointment, or do you have a question about our services?",
+  "flows": {
+    "appointment_booking": {
+      "steps": [
+        "What type of consultation or service are you looking for?",
+        "Is this for yourself or someone else?",
+        "Do you have any health insurance you'd like to use?",
+        "When would you prefer to come in — do you have a specific day or time in mind?",
+        "Could I take your full name, date of birth, and a contact number?"
+      ],
+      "confirm": "Thank you. I've booked a {service} appointment for {date} at {time}. You'll receive a confirmation by email with pre-appointment instructions."
+    },
+    "urgent_concern": {
+      "response": "If this is a medical emergency, please call 999 immediately. For urgent but non-emergency concerns, I'm flagging this for one of our clinical team to call you back within 2 hours. Could I take your name and number?"
+    }
+  }
+}

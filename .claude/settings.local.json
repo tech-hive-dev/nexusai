@@ -8,7 +8,19 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(node:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(xargs cat:*)",
+      "Bash(git -C /Users/mypc/nexusai log --format=\"%H %s\" -1 3740cd6)",
+      "Bash(git -C /Users/mypc/nexusai show 3740cd6)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(gh repo view:*)",
+      "Bash(git remote get-url:*)",
+      "Bash(pandoc --track-changes=all /Users/mypc/nexusai/NexusAI_Full_Product_Spec_v2.docx -o /tmp/nexusai_spec.md)",
+      "Bash(wc -l /Users/mypc/nexusai/backend/app/services/*.py)",
+      "Bash(wc -l /Users/mypc/nexusai/backend/app/api/*.py)",
+      "Bash(python -c \":*)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''app/main.py''\\).read\\(\\)\\); print\\(''main.py OK''\\)\")"
     ]
   }
 }

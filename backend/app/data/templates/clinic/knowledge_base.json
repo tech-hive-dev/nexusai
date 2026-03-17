@@ -1,0 +1,12 @@
+[
+  {"question": "What services do you offer?", "answer": "We offer a range of healthcare services including GP consultations, physiotherapy, mental health support, dermatology, nutrition consultations, and health screenings. Please ask about a specific service for more details."},
+  {"question": "How do I book an appointment?", "answer": "You can book an appointment online, by phone, or I can check availability and book for you now. For urgent medical concerns, please call us directly or dial 999 in an emergency."},
+  {"question": "What are your consultation fees?", "answer": "GP consultations start from £80 for a 20-minute appointment. Specialist consultations vary — please ask for specific pricing. We also accept most private health insurance."},
+  {"question": "Do you accept health insurance?", "answer": "Yes, we work with most major health insurers including Bupa, AXA Health, Vitality, and WPA. Please have your membership number ready when booking."},
+  {"question": "What should I bring to my appointment?", "answer": "Please bring a valid ID, your insurance card (if applicable), a list of any current medications, and any relevant previous medical records or test results."},
+  {"question": "How long will I wait?", "answer": "We aim to offer appointments within 48 hours for routine consultations. For urgent concerns, we have same-day slots available. Please call us for urgent bookings."},
+  {"question": "Do you offer online/virtual consultations?", "answer": "Yes, we offer video consultations for many services. This is ideal for follow-up appointments and minor concerns. Ask when booking if a virtual appointment is suitable for your needs."},
+  {"question": "What is your cancellation policy?", "answer": "Please give 24 hours notice to cancel or rearrange. Late cancellations may be charged at 50% of the consultation fee."},
+  {"question": "Are your practitioners registered?", "answer": "All our practitioners are fully qualified and registered with their respective professional bodies (GMC, HCPC, NMC). Details are available on our website."},
+  {"question": "Do you have a referral service?", "answer": "Yes, we can provide referral letters to specialists, hospitals, and other healthcare providers. Our GPs can refer you to any NHS or private specialist."}
+]

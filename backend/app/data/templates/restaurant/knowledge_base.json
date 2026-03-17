@@ -1,0 +1,12 @@
+[
+  {"question": "What are your opening hours?", "answer": "We are open Monday to Friday 11:00am–10:00pm, Saturday and Sunday 10:00am–11:00pm. We are closed on Christmas Day."},
+  {"question": "Do you take reservations?", "answer": "Yes! You can book a table through our website, by calling us, or by asking me to book right now. We recommend booking in advance for weekends."},
+  {"question": "Do you have a vegetarian or vegan menu?", "answer": "Absolutely! We have a dedicated vegetarian and vegan section on our menu with a wide variety of options. Just let your server know your dietary requirements."},
+  {"question": "Do you cater for allergens?", "answer": "Yes. Our team is trained in allergen awareness. We cater for nut, gluten, dairy, and shellfish allergies. Please inform us of any allergies when booking or on arrival."},
+  {"question": "Do you offer delivery?", "answer": "Yes, we offer delivery via Uber Eats and Deliveroo within a 5km radius. Orders can also be placed directly for collection."},
+  {"question": "What is your cancellation policy?", "answer": "Please cancel at least 24 hours before your reservation to avoid a cancellation fee. For groups of 8 or more, 48 hours notice is required."},
+  {"question": "Do you have parking?", "answer": "There is free street parking on the adjacent streets after 6pm and on Sundays. The nearest paid car park is 2 minutes away."},
+  {"question": "Can you cater for large groups or events?", "answer": "Yes! We offer private dining for groups of up to 50 people and can customise a set menu for your event. Please contact us directly for group bookings."},
+  {"question": "What payment methods do you accept?", "answer": "We accept all major credit and debit cards, contactless payments, Apple Pay, and Google Pay. We also accept cash."},
+  {"question": "Do you have a kids menu?", "answer": "Yes, we have a dedicated children's menu with smaller portions of popular dishes, all priced under £8."}
+]

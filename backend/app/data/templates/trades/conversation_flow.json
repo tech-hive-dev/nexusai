@@ -1,0 +1,23 @@
+{
+  "greeting": "Hi! Thanks for contacting {business_name} 🔧 I'm {agent_name}. What can I help you with today? Describe the issue and I'll get you sorted.",
+  "flows": {
+    "quote_request": {
+      "steps": [
+        "Can you describe the issue or job you need doing?",
+        "Is this an emergency or a planned job?",
+        "What is your postcode so I can confirm we cover your area?",
+        "What is the best day and time for us to visit or call you back?",
+        "Could I take your name and contact number?"
+      ],
+      "confirm": "Thanks {name}! I've logged your enquiry. One of our team will be in touch within {response_time} to discuss the job and provide a quote."
+    },
+    "emergency": {
+      "steps": [
+        "Is anyone in immediate danger or at risk? If yes, call 999 first.",
+        "What exactly is the problem?",
+        "What is your address and postcode?"
+      ],
+      "confirm": "Understood — this is being treated as an emergency. A technician will contact you within 30 minutes. Please ensure access to the property."
+    }
+  }
+}
