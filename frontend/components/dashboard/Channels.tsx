@@ -1,57 +1,63 @@
-// Channels.tsx — interactive channel configuration
+// Channels.tsx — interactive channel configuration, wired to /api/channels
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { API_URL as API } from "@/utils/api";
 const token = () => localStorage.getItem("nexusai_token");
 
 interface ChannelConfig {
   name: string; icon: string; color: string; status: "active" | "setup" | "coming";
-  desc: string; action?: string;
+  desc: string; action?: string; channelType?: string;
   fields?: { key: string; label: string; placeholder: string; type?: string }[];
 }
 
 const CHANNELS: ChannelConfig[] = [
   {
     name: "Website Chat Widget", icon: "💬", color: "#4FFFB0", status: "active",
+    channelType: "website",
     desc: "Your AI agent is live on your website via embed code.", action: "embed",
   },
   {
     name: "WhatsApp Business", icon: "🟢", color: "#25D366", status: "setup",
+    channelType: "whatsapp",
     desc: "Connect WhatsApp to handle customer messages with your AI agent.",
     fields: [
-      { key: "WHATSAPP_TOKEN", label: "WhatsApp API Token", placeholder: "EAAxxxxxxxxx..." },
-      { key: "WHATSAPP_PHONE_ID", label: "Phone Number ID", placeholder: "1234567890" },
-      { key: "WHATSAPP_VERIFY_TOKEN", label: "Webhook Verify Token", placeholder: "my_verify_token" },
+      { key: "whatsapp_token", label: "WhatsApp API Token", placeholder: "EAAxxxxxxxxx..." },
+      { key: "whatsapp_phone_id", label: "Phone Number ID", placeholder: "1234567890" },
+      { key: "whatsapp_verify_token", label: "Webhook Verify Token", placeholder: "my_verify_token" },
     ],
   },
   {
     name: "Facebook Messenger", icon: "🔵", color: "#1877F2", status: "setup",
+    channelType: "facebook",
     desc: "Connect Facebook Messenger to your AI agent.",
     fields: [
-      { key: "FACEBOOK_APP_ID", label: "Facebook App ID", placeholder: "123456789" },
-      { key: "FACEBOOK_APP_SECRET", label: "App Secret", placeholder: "abc123...", type: "password" },
-      { key: "FACEBOOK_PAGE_TOKEN", label: "Page Access Token", placeholder: "EAAxxxxxxxxx..." },
+      { key: "facebook_app_id", label: "Facebook App ID", placeholder: "123456789" },
+      { key: "facebook_app_secret", label: "App Secret", placeholder: "abc123...", type: "password" },
+      { key: "facebook_page_token", label: "Page Access Token", placeholder: "EAAxxxxxxxxx..." },
     ],
   },
   {
     name: "Instagram DM", icon: "📷", color: "#E1306C", status: "coming",
+    channelType: "instagram",
     desc: "Instagram DM integration coming in v1.1 — via Meta Business Suite.",
   },
   {
     name: "Email (SendGrid)", icon: "📧", color: "#EA4335", status: "setup",
+    channelType: "email",
     desc: "Reply to customer emails automatically with your AI agent.",
     fields: [
-      { key: "SENDGRID_API_KEY", label: "SendGrid API Key", placeholder: "SG.xxxxxxxxx", type: "password" },
-      { key: "FROM_EMAIL", label: "From Email Address", placeholder: "support@yourbusiness.com" },
+      { key: "sendgrid_api_key", label: "SendGrid API Key", placeholder: "SG.xxxxxxxxx", type: "password" },
+      { key: "from_email", label: "From Email Address", placeholder: "support@yourbusiness.com" },
     ],
   },
   {
     name: "REST API", icon: "🔑", color: "#C084FC", status: "active",
+    channelType: "api",
     desc: "Integrate programmatically using our API endpoint.", action: "api",
   },
 ];
 
-const statusColor: Record<string, string> = { active: "#4FFFB0", setup: "#FFD166", coming: "rgba(255,255,255,0.3)" };
+const statusColor: Record<string, string> = { active: "#4FFFB0", setup: "#FFD166", coming: "rgba(255,255,255,0.3)", connected: "#4FFFB0" };
 
 export default function Channels() {
   const [open, setOpen] = useState<string | null>(null);
@@ -59,26 +65,50 @@ export default function Channels() {
   const [saving, setSaving] = useState(false);
   const [error, setAppError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  // Map channelType → {id, is_active, created_at}
+  const [channelRecords, setChannelRecords] = useState<Record<string, any>>({});
+
+  const loadChannels = async () => {
+    try {
+      const res = await fetch(`${API}/api/channels`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const map: Record<string, any> = {};
+      for (const ch of data.channels || []) map[ch.type] = ch;
+      setChannelRecords(map);
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => { loadChannels(); }, []);
 
   const save = async (ch: ChannelConfig) => {
-    if (!ch.fields) return;
+    if (!ch.fields || !ch.channelType) return;
     setSaving(true);
     setAppError(null);
     try {
-      const updates: Record<string, string> = {};
-      ch.fields.forEach(f => { if (fields[f.key]) updates[f.key.toLowerCase()] = fields[f.key]; });
+      const config: Record<string, string> = {};
+      ch.fields.forEach(f => { if (fields[f.key]) config[f.key] = fields[f.key]; });
 
-      const res = await fetch(`${API}/api/tenants/settings`, {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || "Failed to save configuration");
+      const existing = channelRecords[ch.channelType];
+      if (existing) {
+        const res = await fetch(`${API}/api/channels/${existing.id}`, {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ config, is_active: true }),
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || "Failed to save");
+      } else {
+        const res = await fetch(`${API}/api/channels`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ type: ch.channelType, config }),
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || "Failed to create channel");
       }
 
+      await loadChannels();
       setSaved(ch.name);
       setTimeout(() => { setSaved(null); setOpen(null); }, 3000);
     } catch (e: any) {
@@ -101,7 +131,7 @@ export default function Channels() {
 
       {saved && (
         <div style={{ background: "rgba(79,255,176,0.1)", border: "1px solid rgba(79,255,176,0.3)", borderRadius: 10, padding: "12px 16px", color: "#4FFFB0", fontSize: 13, marginBottom: 20 }}>
-          ✓ {saved} configured successfully! Redeploy Railway for env vars to take effect if needed.
+          ✓ {saved} configured successfully!
         </div>
       )}
 
@@ -112,92 +142,95 @@ export default function Channels() {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-        {CHANNELS.map(ch => (
-          <div key={ch.name}
-            onClick={() => ch.fields && setOpen(open === ch.name ? null : ch.name)}
-            style={{
-              background: "rgba(255,255,255,0.03)",
-              border: open === ch.name ? `1px solid ${ch.color}60` : "1px solid rgba(255,255,255,0.08)",
-              borderTop: `3px solid ${ch.color}`,
-              borderRadius: 12,
-              padding: "20px",
-              transition: "all 0.2s ease",
-              cursor: ch.fields ? "pointer" : "default",
-              transform: open === ch.name ? "translateY(-2px)" : "none",
-              boxShadow: open === ch.name ? `0 10px 25px -5px ${ch.color}15` : "none"
-            }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-              <span style={{ fontSize: 28 }}>{ch.icon}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ color: "#e8eaf0", fontWeight: 700, fontSize: 15 }}>{ch.name}</div>
-                <span style={{ background: (statusColor[ch.status] || "#888") + "20", color: statusColor[ch.status] || "#888", padding: "2px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: "monospace" }}>
-                  {ch.status.toUpperCase()}
-                </span>
+        {CHANNELS.map(ch => {
+          const record = ch.channelType ? channelRecords[ch.channelType] : null;
+          const isConnected = !!record;
+          const displayStatus = isConnected ? "connected" : ch.status;
+          const displayLabel = isConnected ? "CONNECTED" : displayStatus.toUpperCase();
+
+          return (
+            <div key={ch.name}
+              onClick={() => ch.fields && setOpen(open === ch.name ? null : ch.name)}
+              style={{
+                background: "rgba(255,255,255,0.03)",
+                border: open === ch.name ? `1px solid ${ch.color}60` : "1px solid rgba(255,255,255,0.08)",
+                borderTop: `3px solid ${ch.color}`,
+                borderRadius: 12,
+                padding: "20px",
+                transition: "all 0.2s ease",
+                cursor: ch.fields ? "pointer" : "default",
+                transform: open === ch.name ? "translateY(-2px)" : "none",
+                boxShadow: open === ch.name ? `0 10px 25px -5px ${ch.color}15` : "none"
+              }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                <span style={{ fontSize: 28 }}>{ch.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: "#e8eaf0", fontWeight: 700, fontSize: 15 }}>{ch.name}</div>
+                  <span style={{ background: (statusColor[displayStatus] || "#888") + "20", color: statusColor[displayStatus] || "#888", padding: "2px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: "monospace" }}>
+                    {displayLabel}
+                  </span>
+                </div>
               </div>
+              <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>
+                {isConnected && record?.created_at
+                  ? `${ch.desc} Last configured: ${new Date(record.created_at).toLocaleDateString()}`
+                  : ch.desc}
+              </div>
+
+              {/* Action buttons */}
+              {ch.status !== "coming" && (
+                <div onClick={e => e.stopPropagation()}>
+                  {ch.action === "embed" && (
+                    <button
+                      onClick={() => { const btn = document.querySelector('[data-view="embed"]') as HTMLElement; btn?.click(); }}
+                      style={btnStyle(ch.color)}>
+                      View Embed Code →
+                    </button>
+                  )}
+                  {ch.action === "api" && (
+                    <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8, padding: "10px 12px", fontFamily: "monospace", fontSize: 11, color: "#C084FC", wordBreak: "break-all" }}>
+                      <div style={{ opacity: 0.5, marginBottom: 4, fontSize: 9 }}>ENDPOINT</div>
+                      POST {API}/api/chat/message
+                    </div>
+                  )}
+                  {ch.fields && (
+                    <button onClick={() => setOpen(open === ch.name ? null : ch.name)} style={{ ...btnStyle(ch.color), marginTop: 4 }}>
+                      {open === ch.name ? "Close Panel ✕" : isConnected ? "⚙ Update Configuration" : "⚙ Configure Channel"}
+                    </button>
+                  )}
+                </div>
+              )}
+              {ch.status === "coming" && (
+                <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 12, fontStyle: "italic", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10 }}>Coming in future update</div>
+              )}
+
+              {/* Config panel */}
+              {open === ch.name && ch.fields && (
+                <div onClick={e => e.stopPropagation()} style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                  {ch.fields.map(f => (
+                    <div key={f.key} style={{ marginBottom: 14 }}>
+                      <label style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700, fontFamily: "monospace", display: "block", marginBottom: 6 }}>{f.label.toUpperCase()}</label>
+                      <input
+                        type={f.type || "text"}
+                        value={fields[f.key] || ""}
+                        onChange={e => setFields(prev => ({ ...prev, [f.key]: e.target.value }))}
+                        placeholder={f.placeholder}
+                        style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "10px 12px", color: "#e8eaf0", fontSize: 13, outline: "none" }}
+                      />
+                    </div>
+                  ))}
+                  <button onClick={() => save(ch)} disabled={saving} style={{
+                    background: ch.color, color: "#000", border: "none", borderRadius: 8,
+                    padding: "10px 14px", cursor: saving ? "not-allowed" : "pointer",
+                    fontSize: 13, fontWeight: 800, width: "100%", marginTop: 6, opacity: saving ? 0.7 : 1
+                  }}>
+                    {saving ? "Saving..." : isConnected ? "Update Channel →" : "Save & Activate Channel →"}
+                  </button>
+                </div>
+              )}
             </div>
-            <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>{ch.desc}</div>
-
-            {/* Action buttons */}
-            {ch.status !== "coming" && (
-              <div onClick={e => e.stopPropagation()}>
-                {ch.action === "embed" && (
-                  <button
-                    onClick={() => { const btn = document.querySelector('[data-view="embed"]') as HTMLElement; btn?.click(); }}
-                    style={btnStyle(ch.color)}>
-                    View Embed Code →
-                  </button>
-                )}
-                {ch.action === "api" && (
-                  <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8, padding: "10px 12px", fontFamily: "monospace", fontSize: 11, color: "#C084FC", wordBreak: "break-all" }}>
-                    <div style={{ opacity: 0.5, marginBottom: 4, fontSize: 9 }}>ENDPOINT</div>
-                    POST {API}/api/chat/message
-                  </div>
-                )}
-                {ch.fields && (
-                  <button onClick={() => setOpen(open === ch.name ? null : ch.name)} style={{ ...btnStyle(ch.color), marginTop: 4 }}>
-                    {open === ch.name ? "Close Panel ✕" : "⚙ Configure Channel"}
-                  </button>
-                )}
-              </div>
-            )}
-            {ch.status === "coming" && (
-              <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 12, fontStyle: "italic", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10 }}>Coming in future update</div>
-            )}
-
-            {/* Config panel */}
-            {open === ch.name && ch.fields && (
-              <div onClick={e => e.stopPropagation()} style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                {ch.fields.map(f => (
-                  <div key={f.key} style={{ marginBottom: 14 }}>
-                    <label style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 700, fontFamily: "monospace", display: "block", marginBottom: 6 }}>{f.label.toUpperCase()}</label>
-                    <input
-                      type={f.type || "text"}
-                      value={fields[f.key] || ""}
-                      onChange={e => setFields(prev => ({ ...prev, [f.key]: e.target.value }))}
-                      placeholder={f.placeholder}
-                      style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "10px 12px", color: "#e8eaf0", fontSize: 13, outline: "none" }}
-                    />
-                  </div>
-                ))}
-                <button onClick={() => save(ch)} disabled={saving} style={{
-                  background: ch.color,
-                  color: "#000",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  cursor: saving ? "not-allowed" : "pointer",
-                  fontSize: 13,
-                  fontWeight: 800,
-                  width: "100%",
-                  marginTop: 6,
-                  opacity: saving ? 0.7 : 1
-                }}>
-                  {saving ? "Deploying Configuration..." : "Save & Activate Channel →"}
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

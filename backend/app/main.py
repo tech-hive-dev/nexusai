@@ -21,7 +21,7 @@ if settings.SENTRY_DSN:
     )
 
 logger.info("Importing routers...")
-from app.api import auth, tenants, chat, knowledge, channels, leads, broadcasts, webhooks, analytics, reseller, templates, csat, cart_recovery, integrations
+from app.api import auth, tenants, chat, knowledge, channels, leads, broadcasts, webhooks, analytics, reseller, templates, csat, cart_recovery, integrations, quotes, campaigns
 logger.info("Routers imported successfully.")
 
 
@@ -68,6 +68,90 @@ _MIGRATIONS = [
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_payment_intent_id VARCHAR(255)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS conversation_id UUID REFERENCES conversations(id)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ",
+    # knowledge sources — provenance metadata
+    "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS source_meta JSONB DEFAULT '{}'",
+    # tenants — applied template tracking
+    "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS applied_template_id VARCHAR(50)",
+    # agent templates (custom, DB-persisted)
+    """CREATE TABLE IF NOT EXISTS agent_templates (
+        id VARCHAR(50) PRIMARY KEY,
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        industry VARCHAR(100) DEFAULT 'custom',
+        icon VARCHAR(50) DEFAULT '💼',
+        description TEXT DEFAULT '',
+        is_premium BOOLEAN DEFAULT false,
+        price_cents INT DEFAULT 0,
+        system_prompt TEXT DEFAULT '',
+        starter_knowledge JSONB DEFAULT '[]',
+        config_defaults JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    )""",
+    # leads (AI-scored)
+    """CREATE TABLE IF NOT EXISTS leads (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        conversation_id UUID,
+        customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+        score INTEGER DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'cold',
+        budget VARCHAR(255),
+        timeline VARCHAR(255),
+        decision_maker BOOLEAN DEFAULT false,
+        need_summary TEXT,
+        recommended_action TEXT,
+        contact_name VARCHAR(255),
+        contact_email VARCHAR(255),
+        contact_phone VARCHAR(100),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        followed_up_at TIMESTAMPTZ,
+        converted BOOLEAN DEFAULT false,
+        converted_at TIMESTAMPTZ
+    )""",
+    # quotes
+    """CREATE TABLE IF NOT EXISTS quotes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
+        customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+        conversation_id UUID,
+        line_items JSONB DEFAULT '[]',
+        subtotal FLOAT DEFAULT 0,
+        currency VARCHAR(10) DEFAULT 'GBP',
+        notes TEXT,
+        chat_summary TEXT,
+        status VARCHAR(20) DEFAULT 'draft',
+        valid_until TIMESTAMPTZ,
+        contact_name VARCHAR(255),
+        contact_email VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        sent_at TIMESTAMPTZ,
+        accepted_at TIMESTAMPTZ
+    )""",
+    # campaigns
+    """CREATE TABLE IF NOT EXISTS campaigns (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        message_template TEXT NOT NULL,
+        campaign_type VARCHAR(50) DEFAULT 'broadcast',
+        status VARCHAR(20) DEFAULT 'draft',
+        scheduled_at TIMESTAMPTZ,
+        sent_count VARCHAR(10) DEFAULT '0',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ
+    )""",
+    # campaign contacts
+    """CREATE TABLE IF NOT EXISTS campaign_contacts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        phone VARCHAR(100) NOT NULL,
+        name VARCHAR(255),
+        company VARCHAR(255),
+        sent_at TIMESTAMPTZ,
+        delivered BOOLEAN DEFAULT false,
+        replied BOOLEAN DEFAULT false
+    )""",
 ]
 
 
@@ -129,6 +213,8 @@ app.include_router(templates.router,                            tags=["Templates
 app.include_router(csat.router,                                 tags=["CSAT"])
 app.include_router(cart_recovery.router,                        tags=["Cart Recovery"])
 app.include_router(integrations.router,                         tags=["Integrations"])
+app.include_router(quotes.router,      prefix="/api/quotes",    tags=["Quotes"])
+app.include_router(campaigns.router,   prefix="/api/campaigns", tags=["Campaigns"])
 
 # ─── STATIC FILES ──────────────────────────────────────────────
 os.makedirs("uploads", exist_ok=True)

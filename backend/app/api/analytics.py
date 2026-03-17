@@ -137,3 +137,24 @@ async def get_churn_stats(
         {"tenant_id": str(tenant.id)},
     )
     return {"churn_segments": {r.churn_risk: r.count for r in result.fetchall()}}
+
+
+@router.get("/metrics")
+async def get_metrics(
+    days: int = 7,
+    tenant=Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Full dashboard metrics: leads, conversion, lost revenue, sentiment trend, response time."""
+    from app.services.analytics import get_dashboard_metrics
+    return await get_dashboard_metrics(str(tenant.id), db, days=days)
+
+
+@router.get("/campaigns")
+async def get_campaign_performance(
+    tenant=Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-campaign send/deliver/reply stats."""
+    from app.services.analytics import get_campaign_performance
+    return await get_campaign_performance(str(tenant.id), db)

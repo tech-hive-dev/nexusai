@@ -12,6 +12,7 @@ import uuid
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_tenant
+from app.core.config import settings
 from app.models.user import User
 from app.models.tenant import Tenant
 
@@ -144,25 +145,43 @@ BUILTIN_TEMPLATES = [
 @router.get("/")
 async def list_templates(
     tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
 ):
     hidden = tenant.hidden_templates or []
     templates = [t for t in BUILTIN_TEMPLATES if t["id"] not in hidden]
-    
-    # Add custom templates
-    for tid, tmpl in _custom_templates.items():
-        if tid not in hidden:
+
+    # Add custom templates from DB
+    result = await db.execute(
+        text("SELECT * FROM agent_templates WHERE tenant_id = :tid ORDER BY created_at"),
+        {"tid": str(tenant.id)},
+    )
+    for row in result.mappings().all():
+        tmpl = dict(row)
+        tmpl["id"] = str(tmpl["id"]) if tmpl.get("id") else tmpl["id"]
+        tmpl["is_custom"] = True
+        if tmpl["id"] not in hidden:
             templates.append(tmpl)
-            
+
     return {"templates": templates}
 
 
 @router.get("/{template_id}")
-async def get_template(template_id: str):
+async def get_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     tmpl = next((t for t in BUILTIN_TEMPLATES if t["id"] == template_id), None)
     if not tmpl:
-        tmpl = _custom_templates.get(template_id)
-    if not tmpl:
-        raise HTTPException(status_code=404, detail="Template not found")
+        result = await db.execute(
+            text("SELECT * FROM agent_templates WHERE id = :id AND tenant_id = :tid"),
+            {"id": template_id, "tid": str(current_user.tenant_id)},
+        )
+        row = result.mappings().one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="Template not found")
+        tmpl = dict(row)
+        tmpl["is_custom"] = True
     return tmpl
 
 
@@ -175,15 +194,27 @@ async def deploy_template(
     """Apply a template's system prompt and config defaults to the current tenant."""
     tmpl = next((t for t in BUILTIN_TEMPLATES if t["id"] == template_id), None)
     if not tmpl:
-        raise HTTPException(status_code=404, detail="Template not found")
+        # Check custom templates in DB
+        result = await db.execute(
+            text("SELECT * FROM agent_templates WHERE id = :id AND tenant_id = :tid"),
+            {"id": template_id, "tid": str(current_user.tenant_id)},
+        )
+        row = result.mappings().one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="Template not found")
+        tmpl = dict(row)
+        import json as _json
+        tmpl["starter_knowledge"] = _json.loads(tmpl["starter_knowledge"]) if isinstance(tmpl["starter_knowledge"], str) else (tmpl["starter_knowledge"] or [])
+        tmpl["config_defaults"] = _json.loads(tmpl["config_defaults"]) if isinstance(tmpl["config_defaults"], str) else (tmpl["config_defaults"] or {})
 
     config = tmpl.get("config_defaults", {})
 
-    # Apply config to tenant
-    set_parts = ["agent_persona = :persona", "industry = :industry"]
+    # Apply config to tenant, tracking applied template
+    set_parts = ["agent_persona = :persona", "industry = :industry", "applied_template_id = :tmpl_id"]
     params: dict = {
         "persona": config.get("agent_persona", "Friendly, professional, helpful"),
         "industry": tmpl["industry"],
+        "tmpl_id": template_id,
         "tenant_id": str(current_user.tenant_id),
     }
     if "escalation_after_failures" in config:
@@ -195,17 +226,19 @@ async def deploy_template(
         params,
     )
 
-    # Seed starter knowledge entries
+    # Seed starter knowledge entries tagged with template_id for removal later
+    import json as _json
     starter = tmpl.get("starter_knowledge", [])
     for item in starter:
         source_id = str(uuid.uuid4())
+        source_meta = _json.dumps({"template_id": template_id})
         await db.execute(
             text("""
-                INSERT INTO knowledge_sources (id, tenant_id, type, name, status)
-                VALUES (:id, :tenant_id, 'manual', :name, 'indexed')
+                INSERT INTO knowledge_sources (id, tenant_id, type, name, status, source_meta)
+                VALUES (:id, :tenant_id, 'manual', :name, 'indexed', :source_meta::jsonb)
                 ON CONFLICT DO NOTHING
             """),
-            {"id": source_id, "tenant_id": str(current_user.tenant_id), "name": item["title"]},
+            {"id": source_id, "tenant_id": str(current_user.tenant_id), "name": item["title"], "source_meta": source_meta},
         )
         chunk_id = str(uuid.uuid4())
         await db.execute(
@@ -230,13 +263,45 @@ async def deploy_template(
     }
 
 
+@router.delete("/applied")
+async def remove_applied_template(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove the currently applied template: delete seeded KB items and reset persona/industry."""
+    result = await db.execute(
+        text("SELECT applied_template_id FROM tenants WHERE id = :tid"),
+        {"tid": str(current_user.tenant_id)},
+    )
+    row = result.fetchone()
+    if not row or not row[0]:
+        raise HTTPException(status_code=404, detail="No template currently applied")
+
+    applied_id = row[0]
+
+    # Delete knowledge_sources seeded by this template (chunks cascade via FK)
+    await db.execute(
+        text("""
+            DELETE FROM knowledge_sources
+            WHERE tenant_id = :tid
+            AND source_meta->>'template_id' = :tmpl_id
+        """),
+        {"tid": str(current_user.tenant_id), "tmpl_id": applied_id},
+    )
+
+    # Reset persona/industry and clear applied_template_id
+    await db.execute(
+        text("UPDATE tenants SET applied_template_id = NULL, agent_persona = NULL, industry = NULL WHERE id = :tid"),
+        {"tid": str(current_user.tenant_id)},
+    )
+
+    await db.commit()
+    return {"success": True, "removed_template_id": applied_id}
+
+
 # ─── Custom Template CRUD ─────────────────────────────────────────
 
 from pydantic import BaseModel
-from typing import Optional
-
-# In-memory store for custom templates (persists per process; use DB for production)
-_custom_templates: dict[str, dict] = {}
 
 
 class CreateTemplateRequest(BaseModel):
@@ -252,24 +317,34 @@ class CreateTemplateRequest(BaseModel):
 async def create_custom_template(
     request: CreateTemplateRequest,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Create a custom template for the tenant."""
+    """Create a custom template for the tenant (persisted in DB)."""
     tmpl_id = f"custom-{uuid.uuid4().hex[:8]}"
-    tmpl = {
-        "id": tmpl_id,
-        "name": request.name,
-        "industry": request.industry,
-        "icon": request.icon,
-        "description": request.description,
-        "is_premium": request.is_premium,
-        "price_cents": request.price_cents,
-        "is_custom": True,
-        "system_prompt": f"You are a helpful AI agent for {request.name}. {request.description}",
-        "starter_knowledge": [],
-        "config_defaults": {"agent_persona": "Friendly, professional, helpful"},
-    }
-    _custom_templates[tmpl_id] = tmpl
-    return tmpl
+    system_prompt = f"You are a helpful AI agent for {request.name}. {request.description}"
+    await db.execute(
+        text("""
+            INSERT INTO agent_templates (id, tenant_id, name, industry, icon, description, is_premium, price_cents, system_prompt, starter_knowledge, config_defaults)
+            VALUES (:id, :tenant_id, :name, :industry, :icon, :description, :is_premium, :price_cents, :system_prompt, :starter_knowledge::jsonb, :config_defaults::jsonb)
+        """),
+        {
+            "id": tmpl_id,
+            "tenant_id": str(current_user.tenant_id),
+            "name": request.name,
+            "industry": request.industry,
+            "icon": request.icon,
+            "description": request.description,
+            "is_premium": request.is_premium,
+            "price_cents": request.price_cents,
+            "system_prompt": system_prompt,
+            "starter_knowledge": "[]",
+            "config_defaults": '{"agent_persona": "Friendly, professional, helpful"}',
+        },
+    )
+    await db.commit()
+    return {"id": tmpl_id, "name": request.name, "industry": request.industry, "icon": request.icon,
+            "description": request.description, "is_premium": request.is_premium, "price_cents": request.price_cents,
+            "is_custom": True, "system_prompt": system_prompt}
 
 
 @router.delete("/{template_id}")
@@ -278,19 +353,28 @@ async def delete_template(
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    """Hide a built-in template or delete a custom one."""
-    if template_id in _custom_templates:
-        del _custom_templates[template_id]
+    """Delete a custom template from DB or hide a built-in one."""
+    # Check if it's a custom template in DB
+    result = await db.execute(
+        text("SELECT id FROM agent_templates WHERE id = :id AND tenant_id = :tid"),
+        {"id": template_id, "tid": str(tenant.id)},
+    )
+    if result.scalar_one_or_none():
+        await db.execute(
+            text("DELETE FROM agent_templates WHERE id = :id AND tenant_id = :tid"),
+            {"id": template_id, "tid": str(tenant.id)},
+        )
+        await db.commit()
         return {"success": True, "message": "Custom template deleted"}
-    
-    # Mark as hidden for this tenant
+
+    # Mark built-in as hidden for this tenant
     hidden = list(tenant.hidden_templates or [])
     if template_id not in hidden:
         hidden.append(template_id)
         tenant.hidden_templates = hidden
         await db.commit()
         return {"success": True, "message": "Template hidden"}
-    
+
     return {"success": True, "message": "Already hidden"}
 
 
@@ -342,7 +426,7 @@ async def recommend_template(
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
-                json={"model": "claude-3-5-haiku-latest", "max_tokens": 10, "messages": [{"role": "user", "content": prompt}]},
+                json={"model": settings.TEMPLATE_RECOMMEND_MODEL, "max_tokens": 10, "messages": [{"role": "user", "content": prompt}]},
                 timeout=10,
             )
         picked = resp.json().get("content", [{}])[0].get("text", "").strip().lower().replace(" ", "_")

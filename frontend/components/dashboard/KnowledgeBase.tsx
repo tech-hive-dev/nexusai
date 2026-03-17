@@ -29,6 +29,15 @@ export default function KnowledgeBase() {
     setUrl(""); setName(""); setLoading(false); load();
   };
 
+  const deleteSource = async (id: string, name: string) => {
+    if (!confirm(`Delete "${name}"? This will remove all chunks from this source.`)) return;
+    await fetch(`${API}/api/knowledge/sources/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token()}` },
+    });
+    load();
+  };
+
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append("file", file);
@@ -89,6 +98,12 @@ export default function KnowledgeBase() {
             <span style={{ background: (statusColor[s.status] || "#888") + "20", border: `1px solid ${statusColor[s.status] || "#888"}40`, color: statusColor[s.status] || "#888", padding: "3px 10px", borderRadius: 5, fontSize: 11, fontFamily: "monospace" }}>
               {s.status.toUpperCase()}
             </span>
+            <button
+              onClick={() => deleteSource(s.id, s.name)}
+              title="Delete source"
+              style={{ background: "rgba(255,94,94,0.1)", border: "1px solid rgba(255,94,94,0.25)", color: "#FF5E5E", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>
+              ✕
+            </button>
           </div>
         ))}
       </div>

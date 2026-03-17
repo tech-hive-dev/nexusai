@@ -130,6 +130,19 @@ AGENT_TOOLS = [
             "required": ["sku"],
         },
     },
+    {
+        "name": "generate_quote",
+        "description": "Generate an instant price estimate / quote based on the customer's requirements. Use when a customer asks for a price, quote, or estimate for services or products.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "requirements": {"type": "string", "description": "Description of what the customer needs, including any specific details mentioned"},
+                "customer_name": {"type": "string", "description": "Customer's name if known"},
+                "customer_email": {"type": "string", "description": "Customer's email if known"},
+            },
+            "required": ["requirements"],
+        },
+    },
 ]
 
 
@@ -247,6 +260,38 @@ async def run_agent(
             final_response = await check_guardrails(final_response, tenant, system_prompt)
         except Exception as ge:
             logger.warning(f"Guardrails check skipped: {ge}")
+
+        # 10. Lead qualification — run after 3+ turns
+        if len(history) >= 3:
+            try:
+                from app.services.lead_qualifier import qualify_lead
+                all_messages = history + [{"role": "user", "content": message}]
+                await qualify_lead(
+                    conversation=all_messages,
+                    tenant_id=str(tenant.id),
+                    conversation_id=conversation_id,
+                    customer=customer,
+                    db=db,
+                )
+            except Exception as le:
+                logger.warning(f"Lead qualification skipped: {le}")
+
+        # 11. Sentiment escalation — notify owner if customer is highly negative
+        if sentiment_result.should_escalate or (
+            sentiment_result.emotion in ("angry", "frustrated")
+            and sentiment_result.intensity >= 0.80
+        ):
+            try:
+                await _notify_owner_escalation(
+                    tenant=tenant,
+                    customer=customer,
+                    conversation_id=conversation_id,
+                    user_message=message,
+                    sentiment=sentiment_result,
+                    history=history,
+                )
+            except Exception as ee:
+                logger.warning(f"Escalation notification skipped: {ee}")
 
         return {
             "response": final_response,
@@ -384,6 +429,9 @@ async def _execute_tool(
 
     elif tool_name == "check_inventory":
         return await _tool_check_inventory(tool_input, tenant)
+
+    elif tool_name == "generate_quote":
+        return await _tool_generate_quote(tool_input, tenant, customer, conversation_id, db)
 
     return {"success": False, "error": f"Unknown tool: {tool_name}"}
 
@@ -615,6 +663,94 @@ async def _tool_check_inventory(tool_input: dict, tenant: Tenant) -> dict:
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+async def _tool_generate_quote(
+    tool_input: dict,
+    tenant: Tenant,
+    customer: Customer,
+    conversation_id: str,
+    db: AsyncSession,
+) -> dict:
+    """Generate an instant price quote from the tenant's knowledge base."""
+    try:
+        from app.services.quote_generator import generate_quote
+        # Merge any extra contact info into the customer object in-memory
+        if customer and tool_input.get("customer_name") and not customer.name:
+            customer.name = tool_input["customer_name"]
+        if customer and tool_input.get("customer_email") and not customer.email:
+            customer.email = tool_input["customer_email"]
+
+        result = await generate_quote(
+            requirements=tool_input["requirements"],
+            tenant_id=str(tenant.id),
+            db=db,
+            customer=customer,
+            conversation_id=conversation_id,
+        )
+        return {
+            "success": True,
+            "quote_id": result.get("quote_id"),
+            "subtotal": result.get("subtotal", 0),
+            "currency": result.get("currency", "GBP"),
+            "line_items": result.get("line_items", []),
+            "notes": result.get("notes", ""),
+            "chat_summary": result.get("chat_summary", ""),
+            "message": f"Quote generated: {result.get('currency','GBP')} {result.get('subtotal',0):.2f}. {result.get('chat_summary','')}",
+        }
+    except Exception as e:
+        logger.error(f"Quote generation error: {e}")
+        return {"success": False, "error": "Could not generate quote at this time."}
+
+
+async def _notify_owner_escalation(
+    tenant: Tenant,
+    customer: Customer,
+    conversation_id: str,
+    user_message: str,
+    sentiment,
+    history: list,
+) -> None:
+    """Notify the tenant owner when a customer is highly negative / angry."""
+    customer_name = (customer.name if customer else None) or "Unknown customer"
+    customer_contact = ""
+    if customer:
+        parts = [p for p in [customer.email, customer.phone] if p]
+        customer_contact = " · ".join(parts)
+
+    # Last 3 messages for context
+    last_3 = history[-3:] if len(history) >= 3 else history
+    context_lines = "\n".join(
+        f"  [{m['role'].upper()}]: {str(m.get('content', ''))[:200]}"
+        for m in last_3
+    )
+
+    msg = (
+        f"⚠️ Escalation Alert — {tenant.name}\n\n"
+        f"Customer: {customer_name}{' (' + customer_contact + ')' if customer_contact else ''}\n"
+        f"Sentiment: {sentiment.emotion} (intensity {sentiment.intensity:.2f})\n\n"
+        f"Latest message:\n  \"{user_message[:300]}\"\n\n"
+        f"Recent conversation:\n{context_lines}\n\n"
+        f"View: https://app.nexusai.co/dashboard#conversations?id={conversation_id}"
+    )
+
+    if getattr(tenant, "owner_whatsapp_number", None):
+        try:
+            from app.services.whatsapp_sender import send_text_message
+            await send_text_message(tenant.owner_whatsapp_number, msg)
+        except Exception as e:
+            logger.warning(f"WhatsApp escalation alert failed: {e}")
+
+    if getattr(tenant, "escalation_email", None):
+        try:
+            from app.services.email import send_email
+            await send_email(
+                to=tenant.escalation_email,
+                subject=f"⚠️ Escalation: {customer_name} is {sentiment.emotion}",
+                body=msg,
+            )
+        except Exception as e:
+            logger.warning(f"Email escalation alert failed: {e}")
 
 
 async def _detect_sentiment(message: str) -> str:

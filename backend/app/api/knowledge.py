@@ -209,52 +209,108 @@ async def auto_discover(
     tenant=Depends(get_current_tenant),
     current_user=Depends(get_current_user),
 ):
-    """Use Anthropic to analyze a website and return structured business knowledge preview."""
-    import httpx, os
+    """Use Anthropic to analyze a website + Google Places + social and return structured business knowledge preview."""
+    import httpx, os, re as _re, json as _json
+    from app.core.config import settings
 
-    # Step 1: Fetch website HTML (best-effort)
+    # ── Step 1: Fetch website HTML (best-effort) ───────────────────
     website_text = ""
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
             resp = await client.get(request.url, headers={"User-Agent": "NexusAI/1.0 (business indexer)"})
-            # Strip HTML tags roughly
-            import re as _re
             website_text = _re.sub(r'<[^>]+>', ' ', resp.text)
-            website_text = _re.sub(r'\s+', ' ', website_text)[:8000]  # limit context
+            website_text = _re.sub(r'\s+', ' ', website_text)[:8000]
     except Exception as e:
         website_text = f"Could not fetch website: {str(e)}"
 
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    # ── Step 2: Google Places enrichment (gated on API key) ────────
+    places_text = ""
+    if settings.GOOGLE_PLACES_API_KEY and request.business_name:
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                search_resp = await client.get(
+                    "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+                    params={
+                        "input": request.business_name,
+                        "inputtype": "textquery",
+                        "fields": "place_id,name",
+                        "key": settings.GOOGLE_PLACES_API_KEY,
+                    },
+                )
+                candidates = search_resp.json().get("candidates", [])
+                if candidates:
+                    place_id = candidates[0]["place_id"]
+                    detail_resp = await client.get(
+                        "https://maps.googleapis.com/maps/api/place/details/json",
+                        params={
+                            "place_id": place_id,
+                            "fields": "name,formatted_address,formatted_phone_number,opening_hours,rating,website,types",
+                            "key": settings.GOOGLE_PLACES_API_KEY,
+                        },
+                    )
+                    result = detail_resp.json().get("result", {})
+                    parts = []
+                    if result.get("formatted_address"):
+                        parts.append(f"Address: {result['formatted_address']}")
+                    if result.get("formatted_phone_number"):
+                        parts.append(f"Phone: {result['formatted_phone_number']}")
+                    if result.get("rating"):
+                        parts.append(f"Google Rating: {result['rating']}/5")
+                    if result.get("opening_hours", {}).get("weekday_text"):
+                        parts.append("Hours:\n" + "\n".join(result["opening_hours"]["weekday_text"]))
+                    places_text = "\n".join(parts)
+        except Exception:
+            pass  # graceful skip
+
+    # ── Step 3: Social enrichment (best-effort) ────────────────────
+    social_text = ""
+    if request.business_name:
+        slug = _re.sub(r'[^a-z0-9]', '', request.business_name.lower())
+        social_urls = [
+            f"https://www.facebook.com/{slug}",
+            f"https://www.instagram.com/{slug}/",
+        ]
+        for surl in social_urls:
+            try:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=6) as client:
+                    sresp = await client.get(surl, headers={"User-Agent": "Mozilla/5.0"})
+                    if sresp.status_code == 200:
+                        stext = _re.sub(r'<[^>]+>', ' ', sresp.text)
+                        stext = _re.sub(r'\s+', ' ', stext)[:2000]
+                        social_text += f"\n[{surl}]: {stext}"
+            except Exception:
+                pass
+
+    anthropic_key = settings.ANTHROPIC_API_KEY
     if not anthropic_key:
-        # Fallback: return minimal info from the URL
         return {
             "items": [
-                {"title": "Business Website", "content": f"Website: {request.url}\nBusiness: {request.business_name or 'Unknown'}"},
-                {"title": "About Us", "content": "Add your business description here."},
-                {"title": "Contact", "content": "Add your contact information here."},
+                {"title": "Business Website", "content": f"Website: {request.url}\nBusiness: {request.business_name or 'Unknown'}", "source": "website"},
+                {"title": "About Us", "content": "Add your business description here.", "source": "website"},
+                {"title": "Contact", "content": "Add your contact information here.", "source": "website"},
             ],
             "ai_powered": False,
         }
 
-    prompt = f"""You are analyzing a business website to build a knowledge base for an AI customer service agent.
+    # ── Step 4: LLM extraction ─────────────────────────────────────
+    context_parts = [f"Website content:\n{website_text}"]
+    if places_text:
+        context_parts.append(f"Google Places data:\n{places_text}")
+    if social_text:
+        context_parts.append(f"Social pages (best-effort):\n{social_text[:3000]}")
+
+    prompt = f"""You are analyzing a business to build a knowledge base for an AI customer service agent.
 
 Business name: {request.business_name or "Unknown"}
 Website URL: {request.url}
-Website content (first 8000 chars):
-{website_text}
 
-Extract the following information as a JSON array of objects with "title" and "content" fields:
-1. Business description (what they do, their mission)
-2. Products/Services/Menu (list with prices if available)
-3. Opening hours / availability
-4. Contact information (phone, email, address)
-5. FAQs (common questions and answers)
-6. Policies (returns, cancellations, etc.) if present
-7. Team/About if present
+{chr(10).join(context_parts)}
 
-Only include items where you found real information. Skip items with no data.
-Return ONLY valid JSON array, no explanation. Example:
-[{{"title": "About", "content": "We are..."}}, {{"title": "Hours", "content": "Mon-Fri 9am-6pm"}}]"""
+Extract real information as a JSON array of objects with "title", "content", and "source" fields.
+"source" must be one of: "website", "places", "social".
+Include: description, products/services, hours, contact, FAQs, policies, team info.
+Only include items where you found real data. Skip anything empty or generic.
+Return ONLY a valid JSON array, no explanation."""
 
     try:
         async with httpx.AsyncClient() as client:
@@ -262,24 +318,25 @@ Return ONLY valid JSON array, no explanation. Example:
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
                 json={
-                    "model": "claude-3-5-haiku-latest",
+                    "model": settings.AUTO_DISCOVER_MODEL,
                     "max_tokens": 2000,
                     "messages": [{"role": "user", "content": prompt}],
                 },
                 timeout=30,
             )
         text = resp.json().get("content", [{}])[0].get("text", "[]").strip()
-        import json as _json
-        # Extract JSON from the response
         start = text.find("[")
         end = text.rfind("]") + 1
         items = _json.loads(text[start:end]) if start >= 0 else []
-        return {"items": items, "ai_powered": True}
+        # Ensure every item has a source field
+        for item in items:
+            item.setdefault("source", "website")
+        return {"items": items, "ai_powered": True, "sources_used": ["website"] + (["places"] if places_text else []) + (["social"] if social_text else [])}
     except Exception as e:
         return {
             "items": [
-                {"title": "Business Website", "content": f"Website: {request.url}"},
-                {"title": "About", "content": f"{request.business_name or 'This business'} — add description here."},
+                {"title": "Business Website", "content": f"Website: {request.url}", "source": "website"},
+                {"title": "About", "content": f"{request.business_name or 'This business'} — add description here.", "source": "website"},
             ],
             "ai_powered": False,
             "error": str(e),
@@ -316,13 +373,15 @@ async def auto_discover_confirm(
         content = item.get("content", "")
         if not content.strip():
             continue
+        source_meta = {"auto_discovered": True, "discovery_source": item.get("source", "website")}
         source = KnowledgeSource(
             tenant_id=tenant.id,
             type="manual",
             name=title,
             url=f"{title}: {content[:100]}",
-            status="indexed",  # manually typed = immediately available
+            status="indexed",
             chunk_count=1,
+            source_meta=source_meta,
         )
         db.add(source)
 

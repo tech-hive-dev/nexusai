@@ -19,6 +19,7 @@ class KnowledgeSource(Base):
     chunk_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    source_meta: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

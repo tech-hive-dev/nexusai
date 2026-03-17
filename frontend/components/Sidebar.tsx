@@ -14,8 +14,10 @@ const NAV_GROUPS = [
   {
     label: "REVENUE",
     items: [
+      { id: "quotes", icon: "📋", label: "Quotes" },
       { id: "broadcasts", icon: "📢", label: "Broadcasts" },
       { id: "cart-recovery", icon: "🛒", label: "Cart Recovery" },
+      { id: "analytics", icon: "📊", label: "Analytics" },
     ],
   },
   {

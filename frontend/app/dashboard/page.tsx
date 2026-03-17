@@ -15,6 +15,8 @@ import Billing from "@/components/dashboard/Billing";
 import CartRecovery from "@/components/dashboard/CartRecovery";
 import Integrations from "@/components/dashboard/Integrations";
 import Playground from "@/components/dashboard/Playground";
+import Quotes from "@/components/dashboard/Quotes";
+import Analytics from "@/components/dashboard/Analytics";
 import { API_URL as API } from "@/utils/api";
 
 const VIEWS: Record<string, React.ComponentType> = {
@@ -31,6 +33,8 @@ const VIEWS: Record<string, React.ComponentType> = {
   billing: Billing,
   integrations: Integrations,
   playground: Playground,
+  quotes: Quotes,
+  analytics: Analytics,
 };
 
 export default function Dashboard() {

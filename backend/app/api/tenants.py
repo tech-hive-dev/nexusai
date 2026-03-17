@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
@@ -67,21 +67,23 @@ async def update_settings(
 
 @router.get("/embed-code")
 async def get_embed_code(
+    request: Request,
     tenant=Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the embed snippet for website integration"""
     import os
-    backend_url = settings.BACKEND_URL
+    # Derive backend_url from the incoming request host (most reliable)
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    backend_url = f"{forwarded_proto}://{forwarded_host}"
+
+    # Fallback chain if we somehow got localhost
     if not backend_url or "localhost" in backend_url:
-        # Fallback for Railway environment if BACKEND_URL is not set or still localhost
-        public_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
-        if public_domain:
-            backend_url = f"https://{public_domain}"
-        else:
-            # Absolute fallback to current active host
-            backend_url = "https://wonderful-strength-production-a598.up.railway.app"
-    
+        import os as _os
+        public_domain = _os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        backend_url = f"https://{public_domain}" if public_domain else settings.BACKEND_URL
+
     logger.info(f"Serving embed code with backend_url: {backend_url}")
     code = f"""<!-- NexusAI Chat Widget -->
 <script>
@@ -94,3 +96,23 @@ async def get_embed_code(
 </script>
 <script src="{backend_url}/widget/nexusai.js" async></script>"""
     return {"code": code, "tenant_slug": tenant.slug}
+
+
+class IndustryTemplateRequest(BaseModel):
+    industry: str
+
+
+@router.post("/industry-template")
+async def apply_industry_template(
+    body: IndustryTemplateRequest,
+    tenant=Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Apply a pre-built industry template to the tenant's knowledge base."""
+    from app.services.industry_templates import apply_industry_template
+    result = await apply_industry_template(
+        tenant_id=str(tenant.id),
+        industry=body.industry,
+        db=db,
+    )
+    return result

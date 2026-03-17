@@ -22,8 +22,13 @@ class Settings(BaseSettings):
     # AI
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    AUTO_DISCOVER_MODEL: str = "claude-haiku-4-5-20251001"
+    TEMPLATE_RECOMMEND_MODEL: str = "claude-haiku-4-5-20251001"
     EMBEDDING_MODEL: str = "text-embedding-3-small"  # via OpenAI
     OPENAI_API_KEY: str = ""  # for embeddings + Whisper
+
+    # Enrichment
+    GOOGLE_PLACES_API_KEY: str = ""
 
     # Email
     SENDGRID_API_KEY: str = ""

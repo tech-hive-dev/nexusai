@@ -1,0 +1,79 @@
+# NexusAI Production Deployment Guide
+
+This guide covers everything you need to deploy the NexusAI platform (Frontend, Backend API, asynchronous Celery workers, and Databases) into a stable, production-ready environment.
+
+We will use **Vercel** for the React frontend, **Railway** for the FastAPI backend + workers, and **Supabase / Upstash** for databases. Native configuration files (`vercel.json` and [railway.toml](file:///Users/mypc/nexusai/railway.toml)) are already configured in your repository for this stack.
+
+---
+
+## Step 1: Provision Core Databases 
+
+NexusAI requires a PostgreSQL database (with `pgvector` enabled for RAG) and a Redis instance for real-time task queuing.
+
+### 1a. PostgreSQL (Supabase or Railway)
+1. Go to [Supabase](https://supabase.com/) and create a new project.
+2. Navigate to the SQL Editor and execute the following query to enable vector storage:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
+3. Copy your **Transaction Connection String** (it should look like `postgresql://postgres:[password]...`). This is your `DATABASE_URL`.
+
+### 1b. Redis (Upstash or Railway)
+1. Go to [Upstash](https://upstash.com/) and create a new Redis database.
+2. Copy the **Redis URL** (e.g., `rediss://...`). This is your `REDIS_URL`.
+
+---
+
+## Step 2: Deploy the Backend API (Railway)
+
+Your repository already contains a [railway.toml](file:///Users/mypc/nexusai/railway.toml) file configured to deploy the Dockerized Python backend out-of-the-box.
+
+1. **Connect GitHub**: Create a project in [Railway.app](https://railway.app/) and choose **Deploy from GitHub repo**. Select your `nexusai` repository.
+2. **Set Environment Variables**: In your Railway service settings, add the following variables under the **Variables** tab:
+   - `DATABASE_URL` (From Step 1a)
+   - `REDIS_URL` (From Step 1b)
+   - `ANTHROPIC_API_KEY` (Your Claude API key)
+   - `OPENAI_API_KEY` (Your OpenAI API key - optional fallback)
+   - `STRIPE_SECRET_KEY` (For payments)
+   - `SENTRY_DSN` (For backend error tracking)
+   - `CORS_ORIGINS` (Set this to `https://your-frontend-domain.vercel.app` after Step 3)
+3. **Deploy API Route**: Railway will automatically use the [backend/Dockerfile](file:///Users/mypc/nexusai/backend/Dockerfile) as defined in [railway.toml](file:///Users/mypc/nexusai/railway.toml) and launch `uvicorn`.
+4. **Deploy Celery Worker (Optional/Recommended)**: 
+   - Add a *second* service in Railway from the same repository.
+   - Override the Start Command to: `celery -A app.core.celery_app worker --loglevel=info`
+
+---
+
+## Step 3: Deploy the Frontend (Vercel)
+
+The React application uses Vite and is configured for seamless Vercel hosting via the included `vercel.json` and `vite.config.ts`.
+
+1. **Connect GitHub**: Create a new project in [Vercel](https://vercel.com/) and import your `nexusai` repository.
+2. **Configure Build Settings**:
+   - **Framework Preset**: Vite
+   - **Root Directory**: `frontend` (Important! Make sure you select the frontend folder)
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+3. **Set Environment Variables**:
+   Under the Vercel variables section, add your environment references:
+   - `VITE_API_URL` (Set to your newly generated Railway backend URL, e.g., `https://your-backend-app.up.railway.app/api`)
+   - `VITE_POSTHOG_KEY` (Your public PostHog key)
+   - `VITE_POSTHOG_HOST` (Your PostHog host URL)
+   - `VITE_SENTRY_DSN` (Your frontend Sentry DSN)
+4. **Deploy**: Click Deploy. Vercel will provision the site, execute the TypeScript types test, and launch your dashboard.
+
+---
+
+## Step 4: Final Testing & Webhooks
+
+Once both applications are live, ensure the systems are talking properly:
+
+1. **Test CORS**: Open the Vercel frontend, attempt to create a User or Log In. If it fails, ensure `CORS_ORIGINS` in Railway exactly matches your Vercel URL (with no trailing slash).
+2. **Configure Stripe Webhooks**: 
+   - Go to your Stripe Dashboard -> Webhooks.
+   - Point the listener to `https://your-backend-app.up.railway.app/api/webhooks/stripe`.
+   - Add the `STRIPE_WEBHOOK_SECRET` to your Railway environment variables.
+3. **Configure Cal.com**:
+   - Assign webhook URLs in integrations if using dynamic booking updates.
+
+**Congratulations! Your NexusAI platform is deployed and fully operational.**
