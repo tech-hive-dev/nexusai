@@ -22,6 +22,8 @@ const ICONS = ["💼", "🍽️", "🏥", "🛒", "🏠", "💇", "⚖️", "�
 
 export default function Templates() {
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [deploying, setDeploying] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -29,8 +31,26 @@ export default function Templates() {
   const [recommendedId, setRecommendedId] = useState<string | null>(null);
   const [form, setForm] = useState<CustomForm>({ name: "", industry: "custom", description: "", icon: "💼" });
 
-  const load = () =>
-    fetch(`${API}/api/templates/`).then(r => r.json()).then(d => setTemplates(d.templates || []));
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/api/templates/`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (!res.ok) {
+        const message = res.status === 401 ? "Unauthorized. Please log in again." : "Failed to load templates.";
+        throw new Error(message);
+      }
+      const data = await res.json();
+      setTemplates(data.templates || []);
+    } catch (err: any) {
+      setError(err?.message || "Failed to load templates.");
+      setTemplates([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Load templates + fetch AI recommendation
   useEffect(() => {
@@ -99,6 +119,18 @@ export default function Templates() {
         </div>
       )}
 
+      {error && (
+        <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)", borderRadius: 10, padding: "12px 16px", color: "#F87171", fontSize: 14, marginBottom: 20 }}>
+          {error}
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 12 }}>
+          Loading templates…
+        </div>
+      )}
+
       {/* Custom template form */}
       {showCustom && (
         <div style={{ background: "rgba(79,255,176,0.04)", border: "1px solid rgba(79,255,176,0.2)", borderRadius: 12, padding: 20, marginBottom: 20 }}>
@@ -141,6 +173,12 @@ export default function Templates() {
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {!loading && sorted.length === 0 && !error && (
+        <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 13 }}>
+          No templates available yet.
         </div>
       )}
 
