@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     POSTHOG_API_KEY: str = ""
     POSTHOG_HOST: str = "https://app.posthog.com"
 
+    # Admin
+    ADMIN_SECRET_KEY: str = "change_this_admin_secret"
+
     # Plan limits
     PLAN_STARTER_CONVOS: int = 500
     PLAN_GROWTH_CONVOS: int = 2000

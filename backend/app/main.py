@@ -21,7 +21,7 @@ if settings.SENTRY_DSN:
     )
 
 logger.info("Importing routers...")
-from app.api import auth, tenants, chat, knowledge, channels, leads, broadcasts, webhooks, analytics, reseller, templates, csat, cart_recovery, integrations, quotes, campaigns
+from app.api import auth, tenants, chat, knowledge, channels, leads, broadcasts, webhooks, analytics, reseller, templates, csat, cart_recovery, integrations, quotes, campaigns, admin
 logger.info("Routers imported successfully.")
 
 
@@ -215,6 +215,7 @@ app.include_router(cart_recovery.router,                        tags=["Cart Reco
 app.include_router(integrations.router,                         tags=["Integrations"])
 app.include_router(quotes.router,      prefix="/api/quotes",    tags=["Quotes"])
 app.include_router(campaigns.router,   prefix="/api/campaigns", tags=["Campaigns"])
+app.include_router(admin.router,                               tags=["Admin"])
 
 # ─── STATIC FILES ──────────────────────────────────────────────
 os.makedirs("uploads", exist_ok=True)
