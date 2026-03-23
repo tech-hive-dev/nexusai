@@ -48,7 +48,6 @@ async def admin_stats(
         row = (await db.execute(
             select(
                 func.count(Tenant.id).label("total"),
-                func.sum(func.cast(Tenant.is_active, db.bind.dialect.name == "postgresql" and "int" or "integer")).label("active"),
                 func.sum(Tenant.conversation_count).label("total_conversations"),
             )
         )).mappings().one()

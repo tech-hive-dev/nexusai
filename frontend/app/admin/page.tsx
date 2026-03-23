@@ -216,17 +216,17 @@ export default function AdminPanel() {
         )}
 
         {/* Stats */}
-        {stats && (
+        {stats && stats.total_tenants !== undefined && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 28 }}>
             {[
-              { label: "Total Users", value: stats.total_tenants, color: "#818CF8" },
-              { label: "Conversations", value: stats.total_conversations.toLocaleString(), color: "#10B981" },
-              { label: "Trial", value: stats.by_status["trial"] || 0, color: "#F59E0B" },
-              { label: "Active", value: stats.by_status["active"] || 0, color: "#10B981" },
-              { label: "Suspended", value: stats.by_status["suspended"] || 0, color: "#EF4444" },
-              { label: "Starter plan", value: stats.by_plan["starter"] || 0, color: "#6366F1" },
-              { label: "Growth plan", value: stats.by_plan["growth"] || 0, color: "#10B981" },
-              { label: "Business plan", value: stats.by_plan["business"] || 0, color: "#F59E0B" },
+              { label: "Total Users", value: stats.total_tenants ?? 0, color: "#818CF8" },
+              { label: "Conversations", value: (stats.total_conversations ?? 0).toLocaleString(), color: "#10B981" },
+              { label: "Trial", value: (stats.by_status?.["trial"]) ?? 0, color: "#F59E0B" },
+              { label: "Active", value: (stats.by_status?.["active"]) ?? 0, color: "#10B981" },
+              { label: "Suspended", value: (stats.by_status?.["suspended"]) ?? 0, color: "#EF4444" },
+              { label: "Starter plan", value: (stats.by_plan?.["starter"]) ?? 0, color: "#6366F1" },
+              { label: "Growth plan", value: (stats.by_plan?.["growth"]) ?? 0, color: "#10B981" },
+              { label: "Business plan", value: (stats.by_plan?.["business"]) ?? 0, color: "#F59E0B" },
             ].map(s => (
               <div key={s.label} style={{ background: "#1E293B", borderRadius: 10, padding: "14px 18px", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div style={{ color: s.color, fontWeight: 800, fontSize: 22 }}>{s.value}</div>
