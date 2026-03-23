@@ -193,12 +193,16 @@ async def _run_ingestion(source_id: str):
 # ─── AI Auto-Discovery ────────────────────────────────────────────────────────
 
 class AutoDiscoverRequest(BaseModel):
-    url: str
+    url: Optional[str] = None
     business_name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    instagram_handle: Optional[str] = None
+    facebook_handle: Optional[str] = None
 
 
 class AutoDiscoverConfirmRequest(BaseModel):
-    url: str
+    url: Optional[str] = None
     business_name: Optional[str] = None
     approved_items: list  # list of {title, content} dicts to save
 
@@ -209,136 +213,206 @@ async def auto_discover(
     tenant=Depends(get_current_tenant),
     current_user=Depends(get_current_user),
 ):
-    """Use Anthropic to analyze a website + Google Places + social and return structured business knowledge preview."""
-    import httpx, os, re as _re, json as _json
+    """
+    Multi-source business discovery:
+    - Fetches website HTML
+    - Looks up Google Places using phone/address/name (most accurate with phone)
+    - Fetches explicit social profiles (Instagram/Facebook handles if provided)
+    - Returns KB items + a business_card for identity verification
+    """
+    import httpx, re as _re, json as _json
     from app.core.config import settings
 
-    # ── Step 1: Fetch website HTML (best-effort) ───────────────────
+    sources_used: list[str] = []
     website_text = ""
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
-            resp = await client.get(request.url, headers={"User-Agent": "NexusAI/1.0 (business indexer)"})
-            website_text = _re.sub(r'<[^>]+>', ' ', resp.text)
-            website_text = _re.sub(r'\s+', ' ', website_text)[:8000]
-    except Exception as e:
-        website_text = f"Could not fetch website: {str(e)}"
+    places_data: dict = {}
+    social_text = ""
 
-    # ── Step 2: Google Places enrichment (gated on API key) ────────
-    places_text = ""
-    if settings.GOOGLE_PLACES_API_KEY and request.business_name:
+    # ── 1. Website ─────────────────────────────────────────────────
+    if request.url:
         try:
-            async with httpx.AsyncClient(timeout=8) as client:
-                search_resp = await client.get(
-                    "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
-                    params={
-                        "input": request.business_name,
-                        "inputtype": "textquery",
-                        "fields": "place_id,name",
-                        "key": settings.GOOGLE_PLACES_API_KEY,
-                    },
-                )
-                candidates = search_resp.json().get("candidates", [])
-                if candidates:
-                    place_id = candidates[0]["place_id"]
-                    detail_resp = await client.get(
-                        "https://maps.googleapis.com/maps/api/place/details/json",
+            async with httpx.AsyncClient(follow_redirects=True, timeout=12) as client:
+                resp = await client.get(request.url, headers={"User-Agent": "NexusAI/1.0 (business indexer)"})
+                website_text = _re.sub(r'<[^>]+>', ' ', resp.text)
+                website_text = _re.sub(r'\s+', ' ', website_text)[:8000]
+            sources_used.append("website")
+        except Exception as e:
+            website_text = f"Could not fetch website: {str(e)}"
+
+    # ── 2. Google Places — phone first, then address+name ──────────
+    if settings.GOOGLE_PLACES_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                # Build the best search query from what the user provided
+                if request.phone:
+                    search_query = request.phone
+                elif request.address and request.business_name:
+                    search_query = f"{request.business_name} {request.address}"
+                elif request.business_name:
+                    search_query = request.business_name
+                else:
+                    search_query = None
+
+                if search_query:
+                    search_resp = await client.get(
+                        "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
                         params={
-                            "place_id": place_id,
-                            "fields": "name,formatted_address,formatted_phone_number,opening_hours,rating,website,types",
+                            "input": search_query,
+                            "inputtype": "textquery",
+                            "fields": "place_id,name",
                             "key": settings.GOOGLE_PLACES_API_KEY,
                         },
                     )
-                    result = detail_resp.json().get("result", {})
-                    parts = []
-                    if result.get("formatted_address"):
-                        parts.append(f"Address: {result['formatted_address']}")
-                    if result.get("formatted_phone_number"):
-                        parts.append(f"Phone: {result['formatted_phone_number']}")
-                    if result.get("rating"):
-                        parts.append(f"Google Rating: {result['rating']}/5")
-                    if result.get("opening_hours", {}).get("weekday_text"):
-                        parts.append("Hours:\n" + "\n".join(result["opening_hours"]["weekday_text"]))
-                    places_text = "\n".join(parts)
+                    candidates = search_resp.json().get("candidates", [])
+                    if candidates:
+                        place_id = candidates[0]["place_id"]
+                        detail_resp = await client.get(
+                            "https://maps.googleapis.com/maps/api/place/details/json",
+                            params={
+                                "place_id": place_id,
+                                "fields": "name,formatted_address,formatted_phone_number,opening_hours,rating,website,types,editorial_summary",
+                                "key": settings.GOOGLE_PLACES_API_KEY,
+                            },
+                        )
+                        result = detail_resp.json().get("result", {})
+                        if result:
+                            places_data = result
+                            sources_used.append("google_places")
         except Exception:
-            pass  # graceful skip
+            pass
 
-    # ── Step 3: Social enrichment (best-effort) ────────────────────
-    social_text = ""
-    if request.business_name:
+    # ── 3. Social profiles (explicit handles preferred over guessing) ─
+    social_urls_to_fetch: list[tuple[str, str]] = []
+    if request.instagram_handle:
+        handle = request.instagram_handle.lstrip("@").strip()
+        social_urls_to_fetch.append(("instagram", f"https://www.instagram.com/{handle}/"))
+    if request.facebook_handle:
+        handle = request.facebook_handle.lstrip("@").strip()
+        social_urls_to_fetch.append(("facebook", f"https://www.facebook.com/{handle}"))
+
+    # If no handles provided, try guessing from name (fallback)
+    if not social_urls_to_fetch and request.business_name:
         slug = _re.sub(r'[^a-z0-9]', '', request.business_name.lower())
-        social_urls = [
-            f"https://www.facebook.com/{slug}",
-            f"https://www.instagram.com/{slug}/",
-        ]
-        for surl in social_urls:
-            try:
-                async with httpx.AsyncClient(follow_redirects=True, timeout=6) as client:
-                    sresp = await client.get(surl, headers={"User-Agent": "Mozilla/5.0"})
-                    if sresp.status_code == 200:
-                        stext = _re.sub(r'<[^>]+>', ' ', sresp.text)
-                        stext = _re.sub(r'\s+', ' ', stext)[:2000]
-                        social_text += f"\n[{surl}]: {stext}"
-            except Exception:
-                pass
+        if slug:
+            social_urls_to_fetch = [
+                ("facebook", f"https://www.facebook.com/{slug}"),
+                ("instagram", f"https://www.instagram.com/{slug}/"),
+            ]
 
+    for platform, surl in social_urls_to_fetch:
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=8) as client:
+                sresp = await client.get(surl, headers={"User-Agent": "Mozilla/5.0 (compatible; NexusAI/1.0)"})
+                if sresp.status_code == 200:
+                    stext = _re.sub(r'<[^>]+>', ' ', sresp.text)
+                    stext = _re.sub(r'\s+', ' ', stext)[:2000]
+                    social_text += f"\n[{platform} — {surl}]: {stext}"
+                    if "social" not in sources_used:
+                        sources_used.append("social")
+        except Exception:
+            pass
+
+    # ── 4. Build business_card from Places data ────────────────────
+    business_card: dict = {
+        "name": places_data.get("name") or request.business_name or "",
+        "address": places_data.get("formatted_address") or request.address or "",
+        "phone": places_data.get("formatted_phone_number") or request.phone or "",
+        "rating": places_data.get("rating"),
+        "website": places_data.get("website") or request.url or "",
+        "description": (places_data.get("editorial_summary") or {}).get("overview", ""),
+        "hours": (places_data.get("opening_hours") or {}).get("weekday_text", []),
+        "types": places_data.get("types", []),
+        "sources": sources_used,
+        "verified_via_google": "google_places" in sources_used,
+    }
+
+    # ── 5. LLM extraction ─────────────────────────────────────────
     anthropic_key = settings.ANTHROPIC_API_KEY
     if not anthropic_key:
-        return {
-            "items": [
-                {"title": "Business Website", "content": f"Website: {request.url}\nBusiness: {request.business_name or 'Unknown'}", "source": "website"},
-                {"title": "About Us", "content": "Add your business description here.", "source": "website"},
-                {"title": "Contact", "content": "Add your contact information here.", "source": "website"},
-            ],
-            "ai_powered": False,
-        }
+        # No AI key — return minimal items from what we know
+        items = []
+        if request.business_name or request.url:
+            items.append({"title": "Business", "content": f"Business: {request.business_name or ''}\nWebsite: {request.url or ''}\nPhone: {request.phone or ''}\nAddress: {request.address or ''}", "source": "website"})
+        if places_data:
+            parts = []
+            if business_card["address"]: parts.append(f"Address: {business_card['address']}")
+            if business_card["phone"]: parts.append(f"Phone: {business_card['phone']}")
+            if business_card["rating"]: parts.append(f"Google Rating: {business_card['rating']}/5")
+            if business_card["hours"]: parts.append("Hours:\n" + "\n".join(business_card["hours"]))
+            if parts:
+                items.append({"title": "Location & Contact", "content": "\n".join(parts), "source": "google_places"})
+        if not items:
+            items = [{"title": "Business Info", "content": "Add your business description here.", "source": "website"}]
+        return {"items": items, "ai_powered": False, "business_card": business_card, "sources_used": sources_used}
 
-    # ── Step 4: LLM extraction ─────────────────────────────────────
-    context_parts = [f"Website content:\n{website_text}"]
-    if places_text:
-        context_parts.append(f"Google Places data:\n{places_text}")
+    context_parts = []
+    if website_text:
+        context_parts.append(f"WEBSITE CONTENT:\n{website_text}")
+    if places_data:
+        places_summary = []
+        if business_card["address"]: places_summary.append(f"Address: {business_card['address']}")
+        if business_card["phone"]: places_summary.append(f"Phone: {business_card['phone']}")
+        if business_card["rating"]: places_summary.append(f"Google Rating: {business_card['rating']}/5")
+        if business_card["description"]: places_summary.append(f"Description: {business_card['description']}")
+        if business_card["hours"]: places_summary.append("Opening Hours:\n" + "\n".join(business_card["hours"]))
+        context_parts.append("GOOGLE PLACES DATA:\n" + "\n".join(places_summary))
     if social_text:
-        context_parts.append(f"Social pages (best-effort):\n{social_text[:3000]}")
+        context_parts.append(f"SOCIAL PROFILES:\n{social_text[:3000]}")
 
-    prompt = f"""You are analyzing a business to build a knowledge base for an AI customer service agent.
+    prompt = f"""You are building a knowledge base for an AI customer service agent for this business.
 
-Business name: {request.business_name or "Unknown"}
-Website URL: {request.url}
+Business name: {request.business_name or business_card.get("name") or "Unknown"}
+Website: {request.url or "not provided"}
+Phone: {request.phone or business_card.get("phone") or "not provided"}
+Address: {request.address or business_card.get("address") or "not provided"}
 
 {chr(10).join(context_parts)}
 
-Extract real information as a JSON array of objects with "title", "content", and "source" fields.
-"source" must be one of: "website", "places", "social".
-Include: description, products/services, hours, contact, FAQs, policies, team info.
-Only include items where you found real data. Skip anything empty or generic.
-Return ONLY a valid JSON array, no explanation."""
+Extract structured knowledge as a JSON object with two keys:
+1. "items" — array of knowledge base entries, each with "title", "content", "source"
+   - source must be one of: "website", "google_places", "social"
+   - Include: business description, products/services, pricing, hours, contact info, FAQs, policies, team
+   - Only include items with real extracted data — skip generic placeholder text
+2. "summary" — one paragraph describing what this business does (used for agent persona)
+
+Return ONLY valid JSON, no explanation:
+{{"items": [...], "summary": "..."}}"""
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=35) as client:
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
                 json={
                     "model": settings.AUTO_DISCOVER_MODEL,
-                    "max_tokens": 2000,
+                    "max_tokens": 2500,
                     "messages": [{"role": "user", "content": prompt}],
                 },
-                timeout=30,
             )
-        text = resp.json().get("content", [{}])[0].get("text", "[]").strip()
-        start = text.find("[")
-        end = text.rfind("]") + 1
-        items = _json.loads(text[start:end]) if start >= 0 else []
-        # Ensure every item has a source field
+        raw = resp.json().get("content", [{}])[0].get("text", "{}").strip()
+        # Extract JSON object
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        parsed = _json.loads(raw[start:end]) if start >= 0 else {}
+        items = parsed.get("items", [])
+        summary = parsed.get("summary", "")
         for item in items:
             item.setdefault("source", "website")
-        return {"items": items, "ai_powered": True, "sources_used": ["website"] + (["places"] if places_text else []) + (["social"] if social_text else [])}
+        if summary:
+            business_card["description"] = business_card["description"] or summary
+        return {
+            "items": items,
+            "ai_powered": True,
+            "business_card": business_card,
+            "sources_used": sources_used,
+            "summary": summary,
+        }
     except Exception as e:
         return {
-            "items": [
-                {"title": "Business Website", "content": f"Website: {request.url}", "source": "website"},
-                {"title": "About", "content": f"{request.business_name or 'This business'} — add description here.", "source": "website"},
-            ],
+            "items": [{"title": "Business Info", "content": f"{request.business_name or 'Business'} — {request.url or ''}", "source": "website"}],
             "ai_powered": False,
+            "business_card": business_card,
+            "sources_used": sources_used,
             "error": str(e),
         }
 
